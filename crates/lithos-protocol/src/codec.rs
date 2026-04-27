@@ -96,12 +96,14 @@ mod tests {
                     position: Vec2::new(10.0, 20.0),
                     velocity: Vec2::ZERO,
                     zone: ZoneId::Overworld,
+                    entity_type: crate::types::SnapshotEntityType::Player,
                 },
                 EntitySnapshot {
                     id: EntityId(2),
                     position: Vec2::new(-5.5, 3.2),
                     velocity: Vec2::new(1.0, -1.0),
                     zone: ZoneId::Overworld,
+                    entity_type: crate::types::SnapshotEntityType::Hostile,
                 },
             ],
         };

@@ -118,6 +118,18 @@ pub enum ZoneId {
     AsteroidBase(u32),
 }
 
+/// Describes the visual type of the entity for the client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SnapshotEntityType {
+    Player,
+    Hostile,
+    Trader,
+    ResourceNode,
+    Item,
+    Projectile,
+    Unknown,
+}
+
 /// Snapshot of a single entity's state, sent from server to clients.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntitySnapshot {
@@ -125,4 +137,5 @@ pub struct EntitySnapshot {
     pub position: Vec2,
     pub velocity: Vec2,
     pub zone: ZoneId,
+    pub entity_type: SnapshotEntityType,
 }

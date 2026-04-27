@@ -2,7 +2,7 @@
 
 use bevy_ecs::prelude::*;
 
-use crate::components::{Position, Velocity, Zone, Health, Weapon, Projectile, Collider, Dead, Player, Inventory, Item, Npc, NpcState};
+use crate::components::{Position, Velocity, Zone, Health, Weapon, Projectile, Collider, Dead, Player, Inventory, Item, Npc, NpcState, NpcType};
 use crate::resources::{InputQueue, LastProcessedSeq, SimConfig, TickCounter, EntityRegistry, ZoneChangeEvent, ZoneChangeEvents, CombatEvents, SpawnProjectileEvent, HealthChangedEvent, PlayerDiedEvent, InventoryUpdatedEvent};
 
 /// Advance the tick counter.
@@ -316,7 +316,7 @@ pub fn npc_ai_system(
         }
 
         if let Some(target) = nearest_pos {
-            if nearest_dist_sq < 1000.0 * 1000.0 {
+            if nearest_dist_sq < 1000.0 * 1000.0 && npc.npc_type == NpcType::Hostile {
                 // Aggro: chase player
                 npc.state = NpcState::Aggro;
                 let dir = (target - pos.0).normalize();

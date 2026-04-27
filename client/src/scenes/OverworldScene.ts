@@ -20,7 +20,7 @@ interface OverworldData {
 
 /** Runtime state for a rendered entity. */
 interface RenderedEntity {
-	sprite: Phaser.GameObjects.Arc;
+	sprite: Phaser.GameObjects.Shape;
 	facingLine?: Phaser.GameObjects.Graphics;
 	label: Phaser.GameObjects.Text;
 	targetX: number;
@@ -56,6 +56,7 @@ export class OverworldScene extends Phaser.Scene {
 	private lastDirection: Vec2 = { x: 0, y: 0 };
 	private noise2D!: (x: number, y: number) => number;
 	private worldSeed: number = 12345;
+	private minimap!: Phaser.Cameras.Scene2D.Camera;
 
 	constructor() {
 		super({ key: "OverworldScene" });
@@ -122,6 +123,11 @@ export class OverworldScene extends Phaser.Scene {
 				Phaser.Input.Keyboard.KeyCodes.SPACE,
 			);
 		}
+
+		// --- Minimap ---
+		const cw = this.cameras.main.width;
+		this.minimap = this.cameras.add(cw - 160, 10, 150, 150).setZoom(0.05).setName('minimap');
+		this.minimap.setBackgroundColor(0x000000);
 
 		// --- HUD ---
 		this.fpsText = this.add
@@ -387,42 +393,69 @@ export class OverworldScene extends Phaser.Scene {
 		const me = this.entities.get(this.myEntityId);
 		if (me) {
 			this.cameras.main.centerOn(me.sprite.x, me.sprite.y);
+			this.minimap.centerOn(me.sprite.x, me.sprite.y);
 		}
 	}
 
 	private spawnEntity(entity: EntitySnapshot): void {
 		const isMe = entity.id === this.myEntityId;
-		const isProjectile = this.projectileIds.has(entity.id);
+		const type = entity.entity_type;
 
 		let radius = 12;
 		let color = 0x8b949e;
+		let isRect = false;
+		let labelText = `E${entity.id}`;
+		let labelColor = "#8b949e";
+
 		if (isMe) {
 			radius = 14;
-			color = 0x58a6ff;
-		} else if (isProjectile) {
+			color = 0x58a6ff; // Blue
+			labelText = "YOU";
+			labelColor = "#58a6ff";
+		} else if (type === "Player") {
+			color = 0x58a6ff; // Blue
+			labelText = `Player ${entity.id}`;
+		} else if (type === "Hostile") {
+			color = 0xff4444; // Red
+			labelText = "Hostile";
+			labelColor = "#ff4444";
+		} else if (type === "Trader") {
+			color = 0x2ea043; // Green
+			labelText = "Trader";
+			labelColor = "#2ea043";
+		} else if (type === "ResourceNode") {
+			radius = 20;
+			color = 0x888888; // Grey square
+			isRect = true;
+			labelText = "Resource";
+		} else if (type === "Projectile") {
 			radius = 5;
 			color = 0xffa500; // Orange
+			labelText = "";
 		}
 
-		const sprite = this.add.circle(
-			entity.position.x,
-			entity.position.y,
-			radius,
-			color,
-		);
+		let sprite: Phaser.GameObjects.Shape;
+		if (isRect) {
+			sprite = this.add.rectangle(entity.position.x, entity.position.y, radius*2, radius*2, color);
+		} else {
+			sprite = this.add.circle(entity.position.x, entity.position.y, radius, color);
+		}
 		sprite.setDepth(10);
 
+		// If it's a trader, make it interactive to open trade UI
+		if (type === "Trader") {
+			sprite.setInteractive({ useHandCursor: true });
+			sprite.on("pointerdown", () => {
+				this.openTradeUI(entity.id);
+			});
+		}
+
 		const label = this.add
-			.text(
-				entity.position.x,
-				entity.position.y - 20,
-				isProjectile ? "" : isMe ? "YOU" : `E${entity.id}`,
-				{
-					fontSize: "10px",
-					color: isMe ? "#58a6ff" : "#8b949e",
-					fontFamily: "monospace",
-				},
-			)
+			.text(entity.position.x, entity.position.y - radius - 10, labelText, {
+				fontSize: "10px",
+				color: labelColor,
+				fontFamily: "monospace",
+			})
 			.setOrigin(0.5)
 			.setDepth(10);
 
@@ -442,6 +475,42 @@ export class OverworldScene extends Phaser.Scene {
 			label,
 			targetX: entity.position.x,
 			targetY: entity.position.y,
+		});
+	}
+
+	private openTradeUI(traderId: number): void {
+		// MVP: Simple alert / text overlay to simulate a Trade Dialog
+		if (this.isDead) return;
+		
+		const uiBg = this.add.rectangle(this.cameras.main.width / 2, this.cameras.main.height / 2, 300, 200, 0x000000, 0.9);
+		uiBg.setStrokeStyle(2, 0x2ea043);
+		uiBg.setScrollFactor(0);
+		uiBg.setDepth(300);
+
+		const title = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 - 80, `Scrapper Colony Trader E${traderId}`, {
+			fontSize: "16px",
+			color: "#2ea043",
+			fontFamily: "monospace"
+		}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+
+		const text = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 - 20, "Trade functionality\ncoming soon...", {
+			fontSize: "14px",
+			color: "#ffffff",
+			fontFamily: "monospace",
+			align: "center"
+		}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+
+		const closeBtn = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 + 50, "[ CLOSE ]", {
+			fontSize: "14px",
+			color: "#ff4444",
+			fontFamily: "monospace"
+		}).setOrigin(0.5).setScrollFactor(0).setDepth(301).setInteractive({ useHandCursor: true });
+
+		closeBtn.on("pointerdown", () => {
+			uiBg.destroy();
+			title.destroy();
+			text.destroy();
+			closeBtn.destroy();
 		});
 	}
 }

@@ -12,11 +12,21 @@ export interface Vec2 {
 
 export type ZoneId = { Overworld: null } | { AsteroidBase: number };
 
+export type SnapshotEntityType =
+	| "Player"
+	| "Hostile"
+	| "Trader"
+	| "ResourceNode"
+	| "Item"
+	| "Projectile"
+	| "Unknown";
+
 export interface EntitySnapshot {
 	id: number;
 	position: Vec2;
 	velocity: Vec2;
 	zone: ZoneId;
+	entity_type: SnapshotEntityType;
 }
 
 // ── Client → Server ──────────────────────────────────────────────────

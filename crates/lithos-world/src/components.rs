@@ -76,9 +76,29 @@ pub enum NpcState {
     Attack,
 }
 
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NpcType {
+    Hostile,
+    Trader,
+}
+
 #[derive(Component, Debug, Clone)]
 pub struct Npc {
+    pub npc_type: NpcType,
     pub state: NpcState,
     pub target: Option<lithos_protocol::EntityId>,
     pub spawn_pos: lithos_protocol::Vec2,
+}
+
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub enum ResourceType {
+    Iron,
+    Titanium,
+    Lithos,
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct ResourceNode {
+    pub resource_type: ResourceType,
+    pub yield_amount: u32,
 }

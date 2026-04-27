@@ -47,12 +47,14 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
     let mut sim = Simulation::new();
     let mut connections = ConnectionManager::new();
 
-    // Spawn some initial NPCs
+    // Spawn some initial entities
     use lithos_world::world_gen::{WorldGenerator, Biome};
-    use lithos_world::components::{Npc, NpcState, Health, Weapon, Collider, Inventory};
+    use lithos_world::components::{Npc, NpcState, NpcType, Health, Weapon, Collider, Inventory, ResourceNode, ResourceType};
     use rand::Rng;
     let mut rng = rand::thread_rng();
     let generator = WorldGenerator::new(config.world_seed);
+    
+    // Spawn Hostiles
     for _ in 0..100 {
         let x = rng.gen_range(-4000.0..4000.0);
         let y = rng.gen_range(-4000.0..4000.0);
@@ -68,6 +70,7 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
                 Velocity(Vec2::ZERO),
                 Zone(ZoneId::Overworld),
                 Npc {
+                    npc_type: NpcType::Hostile,
                     state: NpcState::Patrol,
                     target: None,
                     spawn_pos: pos,
@@ -84,6 +87,59 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
             )).id();
             sim.world.resource_mut::<EntityRegistry>().register(npc_id, ecs_ent);
         }
+    }
+    
+    // Spawn Traders (Outer Rim & Mid-Zone only)
+    for _ in 0..20 {
+        let x = rng.gen_range(-4000.0..4000.0);
+        let y = rng.gen_range(-4000.0..4000.0);
+        let pos = Vec2::new(x, y);
+        let biome = generator.get_biome(pos);
+        
+        if biome != Biome::Core {
+            let npc_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+            let ecs_ent = sim.world.spawn((
+                Position(pos),
+                Velocity(Vec2::ZERO),
+                Zone(ZoneId::Overworld),
+                Npc {
+                    npc_type: NpcType::Trader,
+                    state: NpcState::Patrol,
+                    target: None,
+                    spawn_pos: pos,
+                },
+                Health { current: 500.0, max: 500.0 }, // Tough Traders
+                Collider { radius: 14.0 },
+                Inventory { items: vec!["medkit".to_string(), "battery".to_string()] },
+            )).id();
+            sim.world.resource_mut::<EntityRegistry>().register(npc_id, ecs_ent);
+        }
+    }
+    
+    // Spawn Resource Nodes (Radial Scaling)
+    for _ in 0..200 {
+        let x = rng.gen_range(-4000.0..4000.0);
+        let y = rng.gen_range(-4000.0..4000.0);
+        let pos = Vec2::new(x, y);
+        let biome = generator.get_biome(pos);
+        
+        let r_type = match biome {
+            Biome::OuterRim => ResourceType::Iron,
+            Biome::MidZone => if rng.gen_bool(0.3) { ResourceType::Titanium } else { ResourceType::Iron },
+            Biome::Core => if rng.gen_bool(0.4) { ResourceType::Lithos } else { ResourceType::Titanium },
+        };
+        
+        let node_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+        let ecs_ent = sim.world.spawn((
+            Position(pos),
+            Zone(ZoneId::Overworld),
+            Collider { radius: 20.0 }, // Larger hit box
+            ResourceNode {
+                resource_type: r_type,
+                yield_amount: rng.gen_range(5..15),
+            },
+        )).id();
+        sim.world.resource_mut::<EntityRegistry>().register(node_id, ecs_ent);
     }
 
     tracing::info!(tick_rate = config.tick_rate, "game loop starting");
@@ -252,15 +308,45 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
     let entity_map = sim.world.resource::<EntityRegistry>().by_entity.clone();
 
     // Build the entity snapshot list.
+    use lithos_world::components::{Npc, ResourceNode, Item, Projectile, NpcType};
+    use lithos_protocol::SnapshotEntityType;
     let mut entities = Vec::new();
-    let mut query = sim.world.query::<(bevy_ecs::entity::Entity, &Position, &Velocity, &Zone)>();
-    for (ecs_entity, pos, vel, zone) in query.iter(&sim.world) {
+    let mut query = sim.world.query::<(
+        bevy_ecs::entity::Entity, 
+        &Position, 
+        &Velocity, 
+        &Zone,
+        Option<&Player>,
+        Option<&Npc>,
+        Option<&ResourceNode>,
+        Option<&Item>,
+        Option<&Projectile>,
+    )>();
+    for (ecs_entity, pos, vel, zone, player, npc, node, item, proj) in query.iter(&sim.world) {
         if let Some(&eid) = entity_map.get(&ecs_entity) {
+            let entity_type = if player.is_some() {
+                SnapshotEntityType::Player
+            } else if let Some(n) = npc {
+                match n.npc_type {
+                    NpcType::Hostile => SnapshotEntityType::Hostile,
+                    NpcType::Trader => SnapshotEntityType::Trader,
+                }
+            } else if node.is_some() {
+                SnapshotEntityType::ResourceNode
+            } else if item.is_some() {
+                SnapshotEntityType::Item
+            } else if proj.is_some() {
+                SnapshotEntityType::Projectile
+            } else {
+                SnapshotEntityType::Unknown
+            };
+
             entities.push(EntitySnapshot {
                 id: eid,
                 position: pos.0,
                 velocity: vel.0,
                 zone: zone.0,
+                entity_type,
             });
         }
     }
