@@ -1,0 +1,35 @@
+# Lithos — Local Development Stack
+# Usage: docker compose up
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    ports:
+      - "9001:9001"
+    environment:
+      RUST_LOG: lithos=debug
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    ports:
+      - "3000:3000"
+    environment:
+      RUST_LOG: lithos=debug
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+
+  client:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.client
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+      - api

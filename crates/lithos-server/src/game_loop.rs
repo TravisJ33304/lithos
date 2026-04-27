@@ -1,0 +1,237 @@
+//! The main game loop — ties together networking, ECS simulation, and broadcasting.
+
+use std::time::{Duration, Instant};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
+
+use lithos_protocol::{
+    ClientMessage, EntityId, EntitySnapshot, PlayerId, ServerMessage, Vec2, ZoneId, codec,
+};
+use lithos_world::components::{Player, Position, Velocity, Zone};
+use lithos_world::resources::{EntityRegistry, InputQueue, LastProcessedSeq, MoveInput, ZoneChangeEvents, ZoneTransferRequest};
+use lithos_world::simulation::Simulation;
+
+use crate::connection::ConnectionManager;
+use crate::network::{self, NetworkEvent};
+use crate::ServerConfig;
+
+/// Run the game server.
+pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
+    let listener = TcpListener::bind(&config.listen_addr).await?;
+    tracing::info!(addr = %config.listen_addr, "WebSocket listener ready");
+
+    // Channel for network events → game loop.
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<NetworkEvent>();
+
+    // Spawn the TCP accept loop.
+    let accept_event_tx = event_tx.clone();
+    tokio::spawn(async move {
+        let mut next_id: u64 = 1;
+        loop {
+            match listener.accept().await {
+                Ok((stream, _addr)) => {
+                    let entity_id = EntityId(next_id);
+                    next_id += 1;
+                    let tx = accept_event_tx.clone();
+                    tokio::spawn(network::handle_connection(stream, entity_id, tx));
+                }
+                Err(e) => {
+                    tracing::error!("accept error: {e}");
+                }
+            }
+        }
+    });
+
+    // Initialize the game simulation.
+    let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate as f64);
+    let mut sim = Simulation::new();
+    let mut connections = ConnectionManager::new();
+
+    tracing::info!(tick_rate = config.tick_rate, "game loop starting");
+
+    // ── Main game loop ───────────────────────────────────────────────
+    loop {
+        let tick_start = Instant::now();
+
+        // 1. Drain all network events.
+        while let Ok(event) = event_rx.try_recv() {
+            handle_event(event, &mut sim, &mut connections);
+        }
+
+        // 2. Run one simulation tick.
+        sim.tick();
+
+        // 2.5. Send ZoneChanged messages for any zone transfers this tick.
+        send_zone_changes(&mut sim, &connections);
+
+        // 3. Broadcast state snapshots to all connected clients.
+        broadcast_snapshots(&mut sim, &connections);
+
+        // 4. Sleep until the next tick.
+        let elapsed = tick_start.elapsed();
+        if elapsed < tick_duration {
+            tokio::time::sleep(tick_duration - elapsed).await;
+        } else {
+            tracing::warn!(
+                elapsed_ms = elapsed.as_millis(),
+                budget_ms = tick_duration.as_millis(),
+                "tick overran budget"
+            );
+        }
+    }
+}
+
+/// Process a single network event.
+fn handle_event(
+    event: NetworkEvent,
+    sim: &mut Simulation,
+    connections: &mut ConnectionManager,
+) {
+    match event {
+        NetworkEvent::Connected { entity_id, outbound_tx } => {
+            let player_id = PlayerId::new();
+
+            // Spawn a player entity in the ECS world.
+            let ecs_entity = sim.world.spawn((
+                Position(Vec2::ZERO),
+                Velocity(Vec2::ZERO),
+                Player { id: player_id },
+                Zone(ZoneId::Overworld),
+            )).id();
+
+            // Register in the entity registry.
+            let mut registry = sim.world.resource_mut::<EntityRegistry>();
+            registry.register(entity_id, ecs_entity);
+            registry.player_entities.insert(player_id, entity_id);
+
+            // Add to connection manager.
+            connections.add(player_id, entity_id, outbound_tx.clone());
+
+            // Send JoinAck to the client.
+            let ack = ServerMessage::JoinAck {
+                player_id,
+                entity_id,
+                zone: ZoneId::Overworld,
+            };
+            if let Ok(bytes) = codec::encode(&ack) {
+                let _ = outbound_tx.send(bytes);
+            }
+        }
+
+        NetworkEvent::Message { entity_id, message } => {
+            match message {
+                ClientMessage::Join { .. } => {
+                    // Join is handled on connect; ignore duplicate Joins.
+                }
+                ClientMessage::Move { direction, seq } => {
+                    sim.world.resource_mut::<InputQueue>().moves.push(MoveInput {
+                        entity_id,
+                        direction,
+                        seq,
+                    });
+                }
+                ClientMessage::ZoneTransfer { target } => {
+                    sim.world.resource_mut::<InputQueue>().zone_transfers.push(
+                        ZoneTransferRequest { entity_id, target },
+                    );
+                }
+                ClientMessage::Ping { timestamp } => {
+                    // Respond with Pong immediately.
+                    let pong = ServerMessage::Pong {
+                        client_timestamp: timestamp,
+                        server_timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                    };
+                    if let Ok(bytes) = codec::encode(&pong) {
+                        for conn in connections.iter() {
+                            if conn.entity_id == entity_id {
+                                let _ = conn.outbound_tx.send(bytes.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        NetworkEvent::Disconnected { entity_id } => {
+            // Remove from connection manager.
+            connections.remove(entity_id);
+
+            // Look up the ECS entity and player ID.
+            let ecs_entity = sim.world.resource::<EntityRegistry>()
+                .by_id.get(&entity_id).copied();
+
+            if let Some(ecs_entity) = ecs_entity {
+                // Read player_id before taking a mutable borrow on registry.
+                let player_id = sim.world.entity(ecs_entity)
+                    .get::<Player>()
+                    .map(|p| p.id);
+
+                let mut registry = sim.world.resource_mut::<EntityRegistry>();
+                if let Some(pid) = player_id {
+                    registry.player_entities.remove(&pid);
+                }
+                registry.unregister(entity_id);
+                sim.world.despawn(ecs_entity);
+            }
+        }
+    }
+}
+
+/// Build and send state snapshots to all connected clients.
+fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
+    if connections.count() == 0 {
+        return;
+    }
+
+    let tick = sim.current_tick();
+
+    // Clone the data we need from resources to avoid borrow conflicts with World::query.
+    let last_seq_map = sim.world.resource::<LastProcessedSeq>().map.clone();
+    let entity_map = sim.world.resource::<EntityRegistry>().by_entity.clone();
+
+    // Build the entity snapshot list.
+    let mut entities = Vec::new();
+    let mut query = sim.world.query::<(bevy_ecs::entity::Entity, &Position, &Velocity, &Zone)>();
+    for (ecs_entity, pos, vel, zone) in query.iter(&sim.world) {
+        if let Some(&eid) = entity_map.get(&ecs_entity) {
+            entities.push(EntitySnapshot {
+                id: eid,
+                position: pos.0,
+                velocity: vel.0,
+                zone: zone.0,
+            });
+        }
+    }
+
+    // Send a personalized snapshot to each client (with their last_processed_seq).
+    for conn in connections.iter() {
+        let snapshot = ServerMessage::StateSnapshot {
+            tick,
+            last_processed_seq: last_seq_map.get(&conn.entity_id).copied().unwrap_or(0),
+            entities: entities.clone(),
+        };
+        if let Ok(bytes) = codec::encode(&snapshot) {
+            let _ = conn.outbound_tx.send(bytes);
+        }
+    }
+}
+
+/// Send ZoneChanged messages for any zone transfers that occurred this tick.
+fn send_zone_changes(sim: &mut Simulation, connections: &ConnectionManager) {
+    let events = sim.world.resource::<ZoneChangeEvents>().events.clone();
+    for event in events {
+        let msg = ServerMessage::ZoneChanged { zone: event.new_zone };
+        if let Ok(bytes) = codec::encode(&msg) {
+            for conn in connections.iter() {
+                if conn.entity_id == event.entity_id {
+                    let _ = conn.outbound_tx.send(bytes);
+                    break;
+                }
+            }
+        }
+    }
+}

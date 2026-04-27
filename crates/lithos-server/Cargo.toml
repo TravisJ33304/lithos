@@ -1,0 +1,20 @@
+[package]
+name = "lithos-server"
+description = "Dedicated Game Server for Lithos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tokio-tungstenite = "0.26"
+futures-util = "0.3"
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+bevy_ecs = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+lithos-protocol = { path = "../lithos-protocol" }
+lithos-world = { path = "../lithos-world" }

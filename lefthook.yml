@@ -1,0 +1,24 @@
+# Lefthook — Git hooks manager
+# https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  commands:
+    rust-fmt:
+      glob: "*.rs"
+      run: cargo fmt -- --check
+    rust-clippy:
+      glob: "*.rs"
+      run: cargo clippy --workspace -- -D warnings
+    client-lint:
+      root: "client/"
+      glob: "*.{ts,tsx,js,json,css}"
+      run: npx @biomejs/biome check .
+
+pre-push:
+  commands:
+    rust-test:
+      run: cargo test --workspace
+    client-typecheck:
+      root: "client/"
+      run: npx tsc --noEmit

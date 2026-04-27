@@ -1,0 +1,14 @@
+[package]
+name = "lithos-world"
+description = "ECS components, systems, and world generation for Lithos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy_ecs = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+lithos-protocol = { path = "../lithos-protocol" }

@@ -1,6 +1,31 @@
-[package]
-name = "lithos"
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/TravisJ33304/lithos"
 
-[dependencies]
+[workspace.dependencies]
+# ECS
+bevy_ecs = "0.16"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+rmp-serde = "1"
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"

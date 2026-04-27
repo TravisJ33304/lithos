@@ -1,0 +1,17 @@
+[package]
+name = "lithos-api"
+description = "Central Orchestration API for Lithos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+axum = "0.8"
+serde = { workspace = true }
+serde_json = "1"
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+lithos-protocol = { path = "../lithos-protocol" }

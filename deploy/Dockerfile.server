@@ -1,0 +1,22 @@
+# Multi-stage build for lithos-server
+FROM rust:1.86-slim AS builder
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+
+RUN cargo build --release --bin lithos-server
+
+# Runtime
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/lithos-server /usr/local/bin/lithos-server
+
+EXPOSE 9001
+ENV RUST_LOG=lithos=info
+
+CMD ["lithos-server"]
