@@ -337,6 +337,85 @@ async fn handle_event(
                         }
                     }
                 }
+                ClientMessage::BuildStructure { item, grid_x, grid_y } => {
+                    if let Some(&ecs_entity) = sim.world.resource::<EntityRegistry>().by_id.get(&entity_id) {
+                        let entity_ref = sim.world.entity(ecs_entity);
+                        let zone = entity_ref.get::<Zone>().copied();
+                        if let Some(inv) = entity_ref.get::<lithos_world::components::Inventory>() {
+                            let mut temp_inv = inv.items.clone();
+                            if let Some(idx) = temp_inv.iter().position(|i| i == &item) {
+                                temp_inv.remove(idx);
+                                sim.world.entity_mut(ecs_entity)
+                                    .get_mut::<lithos_world::components::Inventory>()
+                                    .unwrap()
+                                    .items = temp_inv;
+                                
+                                // Spawn it in the ECS if it's a known tile type
+                                let tile_type = match item.as_str() {
+                                    "wall_segment" => Some(lithos_world::components::TileType::Wall),
+                                    "door" => Some(lithos_world::components::TileType::Door),
+                                    "workbench" => Some(lithos_world::components::TileType::Workbench),
+                                    "generator" => Some(lithos_world::components::TileType::Generator),
+                                    _ => None,
+                                };
+
+                                if let (Some(t), Some(z)) = (tile_type, zone) {
+                                    let zone_str = match z.0 {
+                                        ZoneId::Overworld => "overworld".to_string(),
+                                        ZoneId::AsteroidBase(id) => format!("asteroid_{}", id),
+                                    };
+                                    
+                                    // Save to DB
+                                    let _ = sqlx::query(
+                                        "INSERT INTO base_structures (zone_id, tile_type, grid_x, grid_y) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING"
+                                    )
+                                    .bind(&zone_str)
+                                    .bind(&item)
+                                    .bind(grid_x)
+                                    .bind(grid_y)
+                                    .execute(pool).await;
+
+                                    // Spawning logic (Simplified MVP)
+                                    // World position calculation (1 grid = 40 pixels)
+                                    let world_pos = Vec2::new(grid_x as f32 * 40.0, grid_y as f32 * 40.0);
+                                    let id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+                                    let mut e = sim.world.spawn((
+                                        Position(world_pos),
+                                        Zone(z.0),
+                                        lithos_world::components::BaseTile {
+                                            tile_type: t.clone(),
+                                            grid_x,
+                                            grid_y,
+                                        },
+                                        // A simple collider for all structures
+                                        lithos_world::components::Collider { radius: 20.0 },
+                                    ));
+
+                                    match t {
+                                        lithos_world::components::TileType::Generator => {
+                                            e.insert(lithos_world::components::PowerGenerator {
+                                                output_kw: 100.0,
+                                                fuel_remaining: 99999.0,
+                                            });
+                                        }
+                                        lithos_world::components::TileType::Workbench | lithos_world::components::TileType::Door => {
+                                            e.insert(lithos_world::components::PowerConsumer {
+                                                required_kw: 10.0,
+                                                is_powered: false,
+                                            });
+                                        }
+                                        _ => {}
+                                    }
+
+                                    let ecs_id = e.id();
+                                    sim.world.resource_mut::<EntityRegistry>().register(id, ecs_id);
+
+                                    tracing::info!(entity_id = entity_id.0, item = %item, "built structure");
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

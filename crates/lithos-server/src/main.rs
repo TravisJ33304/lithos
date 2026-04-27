@@ -66,6 +66,19 @@ async fn main() -> anyhow::Result<()> {
     .execute(&pool)
     .await?;
 
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS base_structures (
+            id SERIAL PRIMARY KEY,
+            zone_id VARCHAR(50) NOT NULL,
+            tile_type VARCHAR(50) NOT NULL,
+            grid_x INT NOT NULL,
+            grid_y INT NOT NULL,
+            UNIQUE(zone_id, grid_x, grid_y)
+        );"
+    )
+    .execute(&pool)
+    .await?;
+
     tracing::info!(addr = %config.listen_addr, tick_rate = config.tick_rate, "lithos-server starting");
 
     game_loop::run(config, pool).await

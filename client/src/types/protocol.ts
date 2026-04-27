@@ -38,6 +38,7 @@ export type ClientMessage =
 	| { Fire: { direction: Vec2 } }
 	| "Respawn"
 	| { Craft: { recipe: string } }
+	| { BuildStructure: { item: string; grid_x: number; grid_y: number } }
 	| { Ping: { timestamp: number } };
 
 // ── Server → Client ──────────────────────────────────────────────────

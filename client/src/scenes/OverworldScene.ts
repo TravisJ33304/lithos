@@ -61,6 +61,11 @@ export class OverworldScene extends Phaser.Scene {
 	private craftPanelVisible = false;
 	private craftPanelElements: Phaser.GameObjects.GameObject[] = [];
 
+	private buildKey!: Phaser.Input.Keyboard.Key;
+	private buildMode = false;
+	private buildGhost!: Phaser.GameObjects.Rectangle;
+	private selectedStructure = "wall_segment";
+
 	constructor() {
 		super({ key: "OverworldScene" });
 	}
@@ -163,7 +168,7 @@ export class OverworldScene extends Phaser.Scene {
 
 		// Crafting instructions
 		this.add
-			.text(10, 82, "[C] Crafting Panel", {
+			.text(10, 82, "[C] Crafting Panel\n[B] Toggle Build Mode", {
 				fontSize: "12px",
 				color: "#666666",
 				fontFamily: "monospace",
@@ -171,9 +176,10 @@ export class OverworldScene extends Phaser.Scene {
 			.setScrollFactor(0)
 			.setDepth(100);
 
-		// C key for crafting
+		// C key for crafting, B for building
 		if (this.input.keyboard) {
 			this.craftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+			this.buildKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
 		}
 
 		this.inventoryText = this.add
@@ -203,6 +209,12 @@ export class OverworldScene extends Phaser.Scene {
 		this.crosshair.strokePath();
 		this.crosshair.setDepth(200);
 
+		// Build ghost (40x40 grid)
+		this.buildGhost = this.add.rectangle(0, 0, 40, 40, 0x58a6ff, 0.4);
+		this.buildGhost.setStrokeStyle(2, 0x58a6ff);
+		this.buildGhost.setDepth(199);
+		this.buildGhost.setVisible(false);
+
 		this.healthText = this.add
 			.text(10, 64, "Health: 100/100", {
 				fontSize: "16px",
@@ -215,9 +227,18 @@ export class OverworldScene extends Phaser.Scene {
 
 		// --- Input processing ---
 		this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-			if (this.isDead) return;
+			if (this.isDead || this.craftPanelVisible) return;
 			// Convert screen coordinates to world coordinates
 			const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+			
+			if (this.buildMode) {
+				// Click to build
+				const gridX = Math.round(worldPoint.x / 40.0);
+				const gridY = Math.round(worldPoint.y / 40.0);
+				this.net.send({ BuildStructure: { item: this.selectedStructure, grid_x: gridX, grid_y: gridY } });
+				return;
+			}
+
 			const myEntity = this.entities.get(this.myEntityId);
 			if (myEntity) {
 				const dx = worldPoint.x - myEntity.sprite.x;
@@ -353,9 +374,22 @@ export class OverworldScene extends Phaser.Scene {
 			this.toggleCraftPanel();
 		}
 
+		// Build mode toggle on B.
+		if (this.buildKey && Phaser.Input.Keyboard.JustDown(this.buildKey)) {
+			this.buildMode = !this.buildMode;
+			this.buildGhost.setVisible(this.buildMode);
+			this.crosshair.setVisible(!this.buildMode);
+		}
+
 		// --- Interpolation & Updates ---
 		const worldPoint = this.cameras.main.getWorldPoint(this.input.activePointer.x, this.input.activePointer.y);
-		this.crosshair.setPosition(worldPoint.x, worldPoint.y);
+		if (this.buildMode) {
+			const gridX = Math.round(worldPoint.x / 40.0);
+			const gridY = Math.round(worldPoint.y / 40.0);
+			this.buildGhost.setPosition(gridX * 40, gridY * 40);
+		} else {
+			this.crosshair.setPosition(worldPoint.x, worldPoint.y);
+		}
 
 		for (const [_id, ent] of this.entities) {
 			ent.sprite.x += (ent.targetX - ent.sprite.x) * INTERPOLATION_SPEED;
@@ -424,44 +458,49 @@ export class OverworldScene extends Phaser.Scene {
 		const isMe = entity.id === this.myEntityId;
 		const type = entity.entity_type;
 
-		let radius = 12;
-		let color = 0x8b949e;
-		let isRect = false;
-		let labelText = `E${entity.id}`;
+		let color = 0xffffff;
+		let size = 14;
+		let labelText = "Entity";
 		let labelColor = "#8b949e";
 
-		if (isMe) {
-			radius = 14;
-			color = 0x58a6ff; // Blue
-			labelText = "YOU";
-			labelColor = "#58a6ff";
-		} else if (type === "Player") {
-			color = 0x58a6ff; // Blue
-			labelText = `Player ${entity.id}`;
+		if (type === "Player") {
+			color = isMe ? 0x58a6ff : 0x7c3aed;
+			labelText = isMe ? "YOU" : `Player ${entity.id}`;
+			labelColor = isMe ? "#58a6ff" : "#7c3aed";
 		} else if (type === "Hostile") {
-			color = 0xff4444; // Red
-			labelText = "Hostile";
+			color = 0xff4444;
+			labelText = "Automata";
 			labelColor = "#ff4444";
 		} else if (type === "Trader") {
-			color = 0x2ea043; // Green
+			color = 0x2ea043;
 			labelText = "Trader";
 			labelColor = "#2ea043";
 		} else if (type === "ResourceNode") {
-			radius = 20;
-			color = 0x888888; // Grey square
-			isRect = true;
-			labelText = "Resource";
+			color = 0x8b949e;
+			labelText = "Ore";
+			labelColor = "#8b949e";
+		} else if (type === "Item") {
+			color = 0xd2a8ff;
+			size = 6;
+			labelText = "";
+		} else if (type === "Unknown") {
+			// Used for base structures for now
+			color = 0x888888;
+			size = 20; // 40x40 tile
+			labelText = "";
 		} else if (type === "Projectile") {
-			radius = 5;
-			color = 0xffa500; // Orange
+			color = 0xffa500;
+			size = 5;
 			labelText = "";
 		}
 
 		let sprite: Phaser.GameObjects.Shape;
-		if (isRect) {
-			sprite = this.add.rectangle(entity.position.x, entity.position.y, radius*2, radius*2, color);
+		if (type === "Unknown") {
+			// Base tile rectangle
+			sprite = this.add.rectangle(entity.position.x, entity.position.y, 40, 40, color, 1.0);
+			sprite.setStrokeStyle(1, 0x000000);
 		} else {
-			sprite = this.add.circle(entity.position.x, entity.position.y, radius, color);
+			sprite = this.add.circle(entity.position.x, entity.position.y, size, color);
 		}
 		sprite.setDepth(10);
 
@@ -474,7 +513,7 @@ export class OverworldScene extends Phaser.Scene {
 		}
 
 		const label = this.add
-			.text(entity.position.x, entity.position.y - radius - 10, labelText, {
+			.text(entity.position.x, entity.position.y - size - 10, labelText, {
 				fontSize: "10px",
 				color: labelColor,
 				fontFamily: "monospace",

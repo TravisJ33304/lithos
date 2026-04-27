@@ -46,6 +46,16 @@ pub enum ClientMessage {
         recipe: String,
     },
 
+    /// Request to build a structure on a grid.
+    BuildStructure {
+        /// The structure item to build (e.g. "wall_segment").
+        item: String,
+        /// X coordinate on the grid.
+        grid_x: i32,
+        /// Y coordinate on the grid.
+        grid_y: i32,
+    },
+
     /// Periodic heartbeat / keep-alive.
     Ping {
         /// Client timestamp (ms since epoch).
