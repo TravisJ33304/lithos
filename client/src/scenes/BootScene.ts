@@ -48,7 +48,7 @@ export class BootScene extends Phaser.Scene {
 		// For MVP, proceed directly to login with network client configured.
 		this.net.setEndpoint(WS_URL);
 		status.setText(`Server: ${WS_URL}`);
-		
+
 		this.time.delayedCall(500, () => {
 			this.scene.start("LoginScene", { net: this.net });
 		});

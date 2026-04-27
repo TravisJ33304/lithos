@@ -44,7 +44,10 @@ export interface ProgressionSnapshot {
 	xp_to_next: number;
 }
 
-export type DynamicEventKind = "MeteorShower" | "SolarFlare" | "CrashedFreighter";
+export type DynamicEventKind =
+	| "MeteorShower"
+	| "SolarFlare"
+	| "CrashedFreighter";
 
 export interface ServerListing {
 	server_id: string;
@@ -111,7 +114,14 @@ export type ClientMessage =
 // ── Server → Client ──────────────────────────────────────────────────
 
 export type ServerMessage =
-	| { JoinAck: { player_id: string; entity_id: number; zone: ZoneId; world_seed: number } }
+	| {
+			JoinAck: {
+				player_id: string;
+				entity_id: number;
+				zone: ZoneId;
+				world_seed: number;
+			};
+	  }
 	| {
 			StateSnapshot: {
 				tick: number;

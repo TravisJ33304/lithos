@@ -22,25 +22,31 @@ export class LoginScene extends Phaser.Scene {
 		this.bgGraphics.setDepth(0);
 
 		// Title
-		this.add.text(width / 2, height / 2 - 120, "L I T H O S", {
-			fontSize: "48px",
-			color: "#58a6ff",
-			fontFamily: "monospace",
-			fontStyle: "bold",
-			shadow: {
-				offsetX: 2,
-				offsetY: 2,
-				color: "#000000",
-				blur: 4,
-				fill: true,
-			}
-		}).setOrigin(0.5).setDepth(10);
+		this.add
+			.text(width / 2, height / 2 - 120, "L I T H O S", {
+				fontSize: "48px",
+				color: "#58a6ff",
+				fontFamily: "monospace",
+				fontStyle: "bold",
+				shadow: {
+					offsetX: 2,
+					offsetY: 2,
+					color: "#000000",
+					blur: 4,
+					fill: true,
+				},
+			})
+			.setOrigin(0.5)
+			.setDepth(10);
 
-		this.add.text(width / 2, height / 2 - 70, "Multiplayer Survival Crafting", {
-			fontSize: "14px",
-			color: "#8b949e",
-			fontFamily: "monospace",
-		}).setOrigin(0.5).setDepth(10);
+		this.add
+			.text(width / 2, height / 2 - 70, "Multiplayer Survival Crafting", {
+				fontSize: "14px",
+				color: "#8b949e",
+				fontFamily: "monospace",
+			})
+			.setOrigin(0.5)
+			.setDepth(10);
 
 		// Container for HTML input overlay
 		const formHtml = `
@@ -50,7 +56,9 @@ export class LoginScene extends Phaser.Scene {
 			</div>
 		`;
 
-		const domElement = this.add.dom(width / 2, height / 2 + 30).createFromHTML(formHtml);
+		const domElement = this.add
+			.dom(width / 2, height / 2 + 30)
+			.createFromHTML(formHtml);
 		domElement.setDepth(20);
 
 		// Focus the input
@@ -95,12 +103,12 @@ export class LoginScene extends Phaser.Scene {
 		// Animate background
 		this.bgGraphics.clear();
 		const { width, height } = this.cameras.main;
-		
+
 		for (let i = 0; i < 50; i++) {
 			const x = (Math.sin(time * 0.0005 + i * 0.5) * 0.5 + 0.5) * width;
 			const y = (Math.cos(time * 0.0003 + i * 0.8) * 0.5 + 0.5) * height;
 			const radius = Math.sin(time * 0.002 + i) * 2 + 3;
-			
+
 			this.bgGraphics.fillStyle(0x30363d, 0.5);
 			this.bgGraphics.fillCircle(x, y, radius);
 		}
@@ -115,14 +123,17 @@ export class LoginScene extends Phaser.Scene {
 		}
 
 		// Connect and send Join
-		this.net.connect().then(() => {
-			this.net.send({ Join: { token: username } });
-		}).catch(err => {
-			console.error("Connection failed", err);
-			if (btn) {
-				btn.innerText = "CONNECTION FAILED";
-				btn.style.background = "#da3633";
-			}
-		});
+		this.net
+			.connect()
+			.then(() => {
+				this.net.send({ Join: { token: username } });
+			})
+			.catch((err) => {
+				console.error("Connection failed", err);
+				if (btn) {
+					btn.innerText = "CONNECTION FAILED";
+					btn.style.background = "#da3633";
+				}
+			});
 	}
 }

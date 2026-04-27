@@ -76,7 +76,7 @@ export class OverworldScene extends Phaser.Scene {
 		if (data.worldSeed) {
 			this.worldSeed = data.worldSeed;
 		}
-		
+
 		// Create a simple deterministic random function for simplex-noise
 		let s = this.worldSeed;
 		const random = () => {
@@ -134,7 +134,10 @@ export class OverworldScene extends Phaser.Scene {
 
 		// --- Minimap ---
 		const cw = this.cameras.main.width;
-		this.minimap = this.cameras.add(cw - 160, 10, 150, 150).setZoom(0.05).setName('minimap');
+		this.minimap = this.cameras
+			.add(cw - 160, 10, 150, 150)
+			.setZoom(0.05)
+			.setName("minimap");
 		this.minimap.setBackgroundColor(0x000000);
 
 		// --- HUD ---
@@ -178,18 +181,27 @@ export class OverworldScene extends Phaser.Scene {
 
 		// C key for crafting, B for building
 		if (this.input.keyboard) {
-			this.craftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
-			this.buildKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
+			this.craftKey = this.input.keyboard.addKey(
+				Phaser.Input.Keyboard.KeyCodes.C,
+			);
+			this.buildKey = this.input.keyboard.addKey(
+				Phaser.Input.Keyboard.KeyCodes.B,
+			);
 		}
 
 		this.inventoryText = this.add
-			.text(this.cameras.main.width / 2, this.cameras.main.height - 30, "Inventory: []", {
-				fontSize: "14px",
-				color: "#ffffff",
-				backgroundColor: "#00000088",
-				padding: { x: 10, y: 5 },
-				fontFamily: "monospace",
-			})
+			.text(
+				this.cameras.main.width / 2,
+				this.cameras.main.height - 30,
+				"Inventory: []",
+				{
+					fontSize: "14px",
+					color: "#ffffff",
+					backgroundColor: "#00000088",
+					padding: { x: 10, y: 5 },
+					fontFamily: "monospace",
+				},
+			)
 			.setScrollFactor(0)
 			.setDepth(100)
 			.setOrigin(0.5);
@@ -230,12 +242,18 @@ export class OverworldScene extends Phaser.Scene {
 			if (this.isDead || this.craftPanelVisible) return;
 			// Convert screen coordinates to world coordinates
 			const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-			
+
 			if (this.buildMode) {
 				// Click to build
 				const gridX = Math.round(worldPoint.x / 40.0);
 				const gridY = Math.round(worldPoint.y / 40.0);
-				this.net.send({ BuildStructure: { item: this.selectedStructure, grid_x: gridX, grid_y: gridY } });
+				this.net.send({
+					BuildStructure: {
+						item: this.selectedStructure,
+						grid_x: gridX,
+						grid_y: gridY,
+					},
+				});
 				return;
 			}
 
@@ -270,7 +288,7 @@ export class OverworldScene extends Phaser.Scene {
 					this.currentHealth = msg.HealthChanged.health;
 					this.maxHealth = msg.HealthChanged.max_health;
 					this.healthText.setText(
-						`Health: ${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`
+						`Health: ${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
 					);
 				}
 			} else if ("PlayerDied" in msg) {
@@ -291,7 +309,9 @@ export class OverworldScene extends Phaser.Scene {
 				if (msg.InventoryUpdated.entity_id === this.myEntityId) {
 					try {
 						this.inventoryItems = JSON.parse(msg.InventoryUpdated.items_json);
-						this.inventoryText.setText(`Inventory: [${this.inventoryItems.join(", ")}]`);
+						this.inventoryText.setText(
+							`Inventory: [${this.inventoryItems.join(", ")}]`,
+						);
 					} catch (e) {
 						console.error("Failed to parse inventory", e);
 					}
@@ -309,7 +329,7 @@ export class OverworldScene extends Phaser.Scene {
 			const dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y);
 			const noiseVal = this.noise2D(pos.x / 1000.0, pos.y / 1000.0);
 			const perturbedDist = dist + noiseVal * 500.0;
-			
+
 			let targetColor = Phaser.Display.Color.HexStringToColor("#111111"); // OuterRim (Dark Gray)
 			if (perturbedDist < 1500.0) {
 				targetColor = Phaser.Display.Color.HexStringToColor("#330000"); // Core (Deep Red)
@@ -319,17 +339,22 @@ export class OverworldScene extends Phaser.Scene {
 
 			// Lerp color for smooth transition
 			const currentColor = Phaser.Display.Color.Interpolate.ColorWithColor(
-				this.cameras.main.backgroundColor, 
-				targetColor, 
-				100, 
-				5
+				this.cameras.main.backgroundColor,
+				targetColor,
+				100,
+				5,
 			);
 			this.cameras.main.setBackgroundColor(currentColor);
 		}
 
 		if (this.isDead) {
 			// Handle respawn
-			if (this.input.keyboard && Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R))) {
+			if (
+				this.input.keyboard &&
+				Phaser.Input.Keyboard.JustDown(
+					this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
+				)
+			) {
 				this.net.send("Respawn");
 				this.isDead = false;
 				this.healthText.setColor("#ff3333");
@@ -383,7 +408,10 @@ export class OverworldScene extends Phaser.Scene {
 		}
 
 		// --- Interpolation & Updates ---
-		const worldPoint = this.cameras.main.getWorldPoint(this.input.activePointer.x, this.input.activePointer.y);
+		const worldPoint = this.cameras.main.getWorldPoint(
+			this.input.activePointer.x,
+			this.input.activePointer.y,
+		);
 		if (this.buildMode) {
 			const gridX = Math.round(worldPoint.x / 40.0);
 			const gridY = Math.round(worldPoint.y / 40.0);
@@ -498,10 +526,22 @@ export class OverworldScene extends Phaser.Scene {
 		let sprite: Phaser.GameObjects.Shape;
 		if (type === "Unknown") {
 			// Base tile rectangle
-			sprite = this.add.rectangle(entity.position.x, entity.position.y, 40, 40, color, 1.0);
+			sprite = this.add.rectangle(
+				entity.position.x,
+				entity.position.y,
+				40,
+				40,
+				color,
+				1.0,
+			);
 			sprite.setStrokeStyle(1, 0x000000);
 		} else {
-			sprite = this.add.circle(entity.position.x, entity.position.y, size, color);
+			sprite = this.add.circle(
+				entity.position.x,
+				entity.position.y,
+				size,
+				color,
+			);
 		}
 		sprite.setDepth(10);
 
@@ -544,30 +584,65 @@ export class OverworldScene extends Phaser.Scene {
 	private openTradeUI(traderId: number): void {
 		// MVP: Simple alert / text overlay to simulate a Trade Dialog
 		if (this.isDead) return;
-		
-		const uiBg = this.add.rectangle(this.cameras.main.width / 2, this.cameras.main.height / 2, 300, 200, 0x000000, 0.9);
+
+		const uiBg = this.add.rectangle(
+			this.cameras.main.width / 2,
+			this.cameras.main.height / 2,
+			300,
+			200,
+			0x000000,
+			0.9,
+		);
 		uiBg.setStrokeStyle(2, 0x2ea043);
 		uiBg.setScrollFactor(0);
 		uiBg.setDepth(300);
 
-		const title = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 - 80, `Scrapper Colony Trader E${traderId}`, {
-			fontSize: "16px",
-			color: "#2ea043",
-			fontFamily: "monospace"
-		}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+		const title = this.add
+			.text(
+				this.cameras.main.width / 2,
+				this.cameras.main.height / 2 - 80,
+				`Scrapper Colony Trader E${traderId}`,
+				{
+					fontSize: "16px",
+					color: "#2ea043",
+					fontFamily: "monospace",
+				},
+			)
+			.setOrigin(0.5)
+			.setScrollFactor(0)
+			.setDepth(301);
 
-		const text = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 - 20, "Trade functionality\ncoming soon...", {
-			fontSize: "14px",
-			color: "#ffffff",
-			fontFamily: "monospace",
-			align: "center"
-		}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+		const text = this.add
+			.text(
+				this.cameras.main.width / 2,
+				this.cameras.main.height / 2 - 20,
+				"Trade functionality\ncoming soon...",
+				{
+					fontSize: "14px",
+					color: "#ffffff",
+					fontFamily: "monospace",
+					align: "center",
+				},
+			)
+			.setOrigin(0.5)
+			.setScrollFactor(0)
+			.setDepth(301);
 
-		const closeBtn = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 + 50, "[ CLOSE ]", {
-			fontSize: "14px",
-			color: "#ff4444",
-			fontFamily: "monospace"
-		}).setOrigin(0.5).setScrollFactor(0).setDepth(301).setInteractive({ useHandCursor: true });
+		const closeBtn = this.add
+			.text(
+				this.cameras.main.width / 2,
+				this.cameras.main.height / 2 + 50,
+				"[ CLOSE ]",
+				{
+					fontSize: "14px",
+					color: "#ff4444",
+					fontFamily: "monospace",
+				},
+			)
+			.setOrigin(0.5)
+			.setScrollFactor(0)
+			.setDepth(301)
+			.setInteractive({ useHandCursor: true });
 
 		closeBtn.on("pointerdown", () => {
 			uiBg.destroy();
@@ -594,18 +669,29 @@ export class OverworldScene extends Phaser.Scene {
 		const panelW = 320;
 		const panelH = 400;
 
-		const bg = this.add.rectangle(cx, cy + panelH / 2 - 10, panelW, panelH, 0x000000, 0.92);
+		const bg = this.add.rectangle(
+			cx,
+			cy + panelH / 2 - 10,
+			panelW,
+			panelH,
+			0x000000,
+			0.92,
+		);
 		bg.setStrokeStyle(2, 0x58a6ff);
 		bg.setScrollFactor(0);
 		bg.setDepth(300);
 		this.craftPanelElements.push(bg);
 
-		const title = this.add.text(cx, cy - 10, "⚙ FABRICATOR", {
-			fontSize: "16px",
-			color: "#58a6ff",
-			fontFamily: "monospace",
-			fontStyle: "bold",
-		}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+		const title = this.add
+			.text(cx, cy - 10, "⚙ FABRICATOR", {
+				fontSize: "16px",
+				color: "#58a6ff",
+				fontFamily: "monospace",
+				fontStyle: "bold",
+			})
+			.setOrigin(0.5)
+			.setScrollFactor(0)
+			.setDepth(301);
 		this.craftPanelElements.push(title);
 
 		// Recipe definitions (must match server-side RECIPES)
@@ -613,28 +699,57 @@ export class OverworldScene extends Phaser.Scene {
 			{ name: "iron_plate", inputs: "2× iron", output: "iron_plate" },
 			{ name: "circuit", inputs: "iron + iron_plate", output: "circuit" },
 			{ name: "medkit", inputs: "scrap + circuit", output: "medkit" },
-			{ name: "titanium_plate", inputs: "2× titanium", output: "titanium_plate" },
-			{ name: "battery", inputs: "titanium_plate + circuit", output: "battery" },
-			{ name: "shield_module", inputs: "titan_plate + battery + circuit", output: "shield_module" },
+			{
+				name: "titanium_plate",
+				inputs: "2× titanium",
+				output: "titanium_plate",
+			},
+			{
+				name: "battery",
+				inputs: "titanium_plate + circuit",
+				output: "battery",
+			},
+			{
+				name: "shield_module",
+				inputs: "titan_plate + battery + circuit",
+				output: "shield_module",
+			},
 			{ name: "wall_segment", inputs: "2× iron_plate", output: "wall_segment" },
 			{ name: "door", inputs: "iron_plate + circuit", output: "door" },
-			{ name: "generator", inputs: "battery + titan_plate + circuit", output: "generator" },
-			{ name: "workbench", inputs: "2× iron_plate + circuit", output: "workbench" },
+			{
+				name: "generator",
+				inputs: "battery + titan_plate + circuit",
+				output: "generator",
+			},
+			{
+				name: "workbench",
+				inputs: "2× iron_plate + circuit",
+				output: "workbench",
+			},
 		];
 
 		let yOff = cy + 20;
 		for (const r of recipes) {
-			const btn = this.add.text(cx, yOff, `▸ ${r.output}`, {
-				fontSize: "13px",
-				color: "#8b949e",
-				fontFamily: "monospace",
-			}).setOrigin(0.5).setScrollFactor(0).setDepth(301).setInteractive({ useHandCursor: true });
+			const btn = this.add
+				.text(cx, yOff, `▸ ${r.output}`, {
+					fontSize: "13px",
+					color: "#8b949e",
+					fontFamily: "monospace",
+				})
+				.setOrigin(0.5)
+				.setScrollFactor(0)
+				.setDepth(301)
+				.setInteractive({ useHandCursor: true });
 
-			const detail = this.add.text(cx, yOff + 14, `  ${r.inputs}`, {
-				fontSize: "10px",
-				color: "#555555",
-				fontFamily: "monospace",
-			}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+			const detail = this.add
+				.text(cx, yOff + 14, `  ${r.inputs}`, {
+					fontSize: "10px",
+					color: "#555555",
+					fontFamily: "monospace",
+				})
+				.setOrigin(0.5)
+				.setScrollFactor(0)
+				.setDepth(301);
 
 			btn.on("pointerover", () => btn.setColor("#58a6ff"));
 			btn.on("pointerout", () => btn.setColor("#8b949e"));
@@ -649,11 +764,16 @@ export class OverworldScene extends Phaser.Scene {
 		}
 
 		// Close button
-		const closeBtn = this.add.text(cx, yOff + 10, "[ CLOSE ]", {
-			fontSize: "13px",
-			color: "#ff4444",
-			fontFamily: "monospace",
-		}).setOrigin(0.5).setScrollFactor(0).setDepth(301).setInteractive({ useHandCursor: true });
+		const closeBtn = this.add
+			.text(cx, yOff + 10, "[ CLOSE ]", {
+				fontSize: "13px",
+				color: "#ff4444",
+				fontFamily: "monospace",
+			})
+			.setOrigin(0.5)
+			.setScrollFactor(0)
+			.setDepth(301)
+			.setInteractive({ useHandCursor: true });
 		closeBtn.on("pointerdown", () => this.toggleCraftPanel());
 		this.craftPanelElements.push(closeBtn);
 	}

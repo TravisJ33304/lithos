@@ -73,7 +73,9 @@ export class NetworkClient {
 				if ("Pong" in msg) {
 					const now = Date.now();
 					const sample = Math.max(1, now - Number(msg.Pong.client_timestamp));
-					this.estimatedRttMs = Math.round(this.estimatedRttMs * 0.7 + sample * 0.3);
+					this.estimatedRttMs = Math.round(
+						this.estimatedRttMs * 0.7 + sample * 0.3,
+					);
 				}
 
 				for (const listener of this.listeners) {
