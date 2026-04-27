@@ -1,6 +1,10 @@
 //! # lithos-api
 //!
 //! Central Orchestration API for Lithos.
+//!
+//! Configuration is loaded from environment variables. See `.env.example` for
+//! available options. The server will also load a `.env` file in the current
+//! directory if present.
 
 use anyhow::{Context, Result};
 use axum::{
@@ -864,6 +868,9 @@ fn internal_err<E: std::fmt::Display>(err: E) -> (StatusCode, String) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load environment variables from .env file (optional)
+    let _ = dotenvy::dotenv();
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("lithos=info".parse()?))
         .init();

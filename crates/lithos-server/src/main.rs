@@ -4,6 +4,10 @@
 //!
 //! Runs a fixed-tick game loop using [`bevy_ecs`] and accepts player
 //! connections over WebSockets via [`tokio_tungstenite`].
+//!
+//! Configuration is loaded from environment variables. See `.env.example` for
+//! available options. The server will also load a `.env` file in the current
+//! directory if present.
 
 mod auth;
 mod connection;
@@ -74,6 +78,9 @@ impl Default for ServerConfig {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load environment variables from .env file (optional)
+    let _ = dotenvy::dotenv();
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("lithos=info".parse()?))
         .init();
