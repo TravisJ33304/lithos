@@ -432,7 +432,7 @@ export class OverworldScene extends Phaser.Scene {
 		// Update my facing line
 		if (!this.isDead) {
 			const me = this.entities.get(this.myEntityId);
-			if (me && me.facingLine) {
+			if (me?.facingLine) {
 				const dx = worldPoint.x - me.sprite.x;
 				const dy = worldPoint.y - me.sprite.y;
 				const angle = Math.atan2(dy, dx);

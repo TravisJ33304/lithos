@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { NetworkClient } from "../net/NetworkClient";
+import type { NetworkClient } from "../net/NetworkClient";
 
 export class LoginScene extends Phaser.Scene {
 	private net!: NetworkClient;
