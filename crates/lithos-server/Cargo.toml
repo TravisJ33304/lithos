@@ -19,3 +19,5 @@ anyhow = { workspace = true }
 lithos-protocol = { path = "../lithos-protocol" }
 lithos-world = { path = "../lithos-world" }
 rand = "0.8.6"
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "uuid", "json"] }
+serde_json = "1.0.149"

@@ -22,6 +22,8 @@ pub struct ServerConfig {
     pub max_players: usize,
     /// World Generation Seed
     pub world_seed: u32,
+    /// Database connection URL
+    pub db_url: String,
 }
 
 impl Default for ServerConfig {
@@ -31,6 +33,7 @@ impl Default for ServerConfig {
             tick_rate: 20,
             max_players: 100,
             world_seed: 12345,
+            db_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://postgres:s7Eqdd&KYQea&0^h433S@db.uxouuxrjaudnwlnbfyqz.supabase.co:5432/postgres".to_string()),
         }
     }
 }
@@ -42,7 +45,28 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = ServerConfig::default();
+    
+    tracing::info!("Connecting to database...");
+    let pool = sqlx::PgPool::connect(&config.db_url).await?;
+    tracing::info!("Connected to Postgres!");
+    
+    // Create necessary tables if they don't exist
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS players (
+            id UUID PRIMARY KEY,
+            username VARCHAR(255) NOT NULL,
+            x FLOAT NOT NULL,
+            y FLOAT NOT NULL,
+            zone_id VARCHAR(50) NOT NULL,
+            health FLOAT NOT NULL,
+            inventory JSONB NOT NULL,
+            last_login TIMESTAMPTZ DEFAULT NOW()
+        );"
+    )
+    .execute(&pool)
+    .await?;
+
     tracing::info!(addr = %config.listen_addr, tick_rate = config.tick_rate, "lithos-server starting");
 
-    game_loop::run(config).await
+    game_loop::run(config, pool).await
 }

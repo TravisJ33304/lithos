@@ -7,6 +7,7 @@
 //! [`bevy_ecs`] as a standalone ECS — no Bevy App or renderer involved.
 
 pub mod components;
+pub mod crafting;
 pub mod resources;
 pub mod simulation;
 pub mod systems;

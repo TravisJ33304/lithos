@@ -40,6 +40,12 @@ pub enum ClientMessage {
     /// Request to respawn after dying.
     Respawn,
 
+    /// Request to craft an item using a named recipe.
+    Craft {
+        /// The recipe name to craft.
+        recipe: String,
+    },
+
     /// Periodic heartbeat / keep-alive.
     Ping {
         /// Client timestamp (ms since epoch).

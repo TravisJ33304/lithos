@@ -57,6 +57,9 @@ export class OverworldScene extends Phaser.Scene {
 	private noise2D!: (x: number, y: number) => number;
 	private worldSeed: number = 12345;
 	private minimap!: Phaser.Cameras.Scene2D.Camera;
+	private craftKey!: Phaser.Input.Keyboard.Key;
+	private craftPanelVisible = false;
+	private craftPanelElements: Phaser.GameObjects.GameObject[] = [];
 
 	constructor() {
 		super({ key: "OverworldScene" });
@@ -157,6 +160,21 @@ export class OverworldScene extends Phaser.Scene {
 			})
 			.setScrollFactor(0)
 			.setDepth(100);
+
+		// Crafting instructions
+		this.add
+			.text(10, 82, "[C] Crafting Panel", {
+				fontSize: "12px",
+				color: "#666666",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
+
+		// C key for crafting
+		if (this.input.keyboard) {
+			this.craftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+		}
 
 		this.inventoryText = this.add
 			.text(this.cameras.main.width / 2, this.cameras.main.height - 30, "Inventory: []", {
@@ -328,6 +346,11 @@ export class OverworldScene extends Phaser.Scene {
 		// Zone transfer on Space.
 		if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
 			this.net.send({ ZoneTransfer: { target: { AsteroidBase: 1 } } });
+		}
+
+		// Crafting panel toggle on C.
+		if (this.craftKey && Phaser.Input.Keyboard.JustDown(this.craftKey)) {
+			this.toggleCraftPanel();
 		}
 
 		// --- Interpolation & Updates ---
@@ -512,5 +535,86 @@ export class OverworldScene extends Phaser.Scene {
 			text.destroy();
 			closeBtn.destroy();
 		});
+	}
+
+	private toggleCraftPanel(): void {
+		if (this.craftPanelVisible) {
+			// Close the panel
+			for (const el of this.craftPanelElements) {
+				el.destroy();
+			}
+			this.craftPanelElements = [];
+			this.craftPanelVisible = false;
+			return;
+		}
+
+		this.craftPanelVisible = true;
+		const cx = this.cameras.main.width - 180;
+		const cy = 180;
+		const panelW = 320;
+		const panelH = 400;
+
+		const bg = this.add.rectangle(cx, cy + panelH / 2 - 10, panelW, panelH, 0x000000, 0.92);
+		bg.setStrokeStyle(2, 0x58a6ff);
+		bg.setScrollFactor(0);
+		bg.setDepth(300);
+		this.craftPanelElements.push(bg);
+
+		const title = this.add.text(cx, cy - 10, "⚙ FABRICATOR", {
+			fontSize: "16px",
+			color: "#58a6ff",
+			fontFamily: "monospace",
+			fontStyle: "bold",
+		}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+		this.craftPanelElements.push(title);
+
+		// Recipe definitions (must match server-side RECIPES)
+		const recipes = [
+			{ name: "iron_plate", inputs: "2× iron", output: "iron_plate" },
+			{ name: "circuit", inputs: "iron + iron_plate", output: "circuit" },
+			{ name: "medkit", inputs: "scrap + circuit", output: "medkit" },
+			{ name: "titanium_plate", inputs: "2× titanium", output: "titanium_plate" },
+			{ name: "battery", inputs: "titanium_plate + circuit", output: "battery" },
+			{ name: "shield_module", inputs: "titan_plate + battery + circuit", output: "shield_module" },
+			{ name: "wall_segment", inputs: "2× iron_plate", output: "wall_segment" },
+			{ name: "door", inputs: "iron_plate + circuit", output: "door" },
+			{ name: "generator", inputs: "battery + titan_plate + circuit", output: "generator" },
+			{ name: "workbench", inputs: "2× iron_plate + circuit", output: "workbench" },
+		];
+
+		let yOff = cy + 20;
+		for (const r of recipes) {
+			const btn = this.add.text(cx, yOff, `▸ ${r.output}`, {
+				fontSize: "13px",
+				color: "#8b949e",
+				fontFamily: "monospace",
+			}).setOrigin(0.5).setScrollFactor(0).setDepth(301).setInteractive({ useHandCursor: true });
+
+			const detail = this.add.text(cx, yOff + 14, `  ${r.inputs}`, {
+				fontSize: "10px",
+				color: "#555555",
+				fontFamily: "monospace",
+			}).setOrigin(0.5).setScrollFactor(0).setDepth(301);
+
+			btn.on("pointerover", () => btn.setColor("#58a6ff"));
+			btn.on("pointerout", () => btn.setColor("#8b949e"));
+			btn.on("pointerdown", () => {
+				this.net.send({ Craft: { recipe: r.name } });
+				btn.setColor("#2ea043");
+				this.time.delayedCall(300, () => btn.setColor("#8b949e"));
+			});
+
+			this.craftPanelElements.push(btn, detail);
+			yOff += 34;
+		}
+
+		// Close button
+		const closeBtn = this.add.text(cx, yOff + 10, "[ CLOSE ]", {
+			fontSize: "13px",
+			color: "#ff4444",
+			fontFamily: "monospace",
+		}).setOrigin(0.5).setScrollFactor(0).setDepth(301).setInteractive({ useHandCursor: true });
+		closeBtn.on("pointerdown", () => this.toggleCraftPanel());
+		this.craftPanelElements.push(closeBtn);
 	}
 }

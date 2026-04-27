@@ -39,6 +39,8 @@ impl Simulation {
             systems::respawn_system,
             systems::movement_system,
             systems::bounds_system,
+            systems::power_grid_system,
+            systems::life_support_system,
             systems::hit_detection_system,
             systems::projectile_expiration_system,
             systems::zone_transfer_system,

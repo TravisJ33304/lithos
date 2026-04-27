@@ -16,7 +16,7 @@ use crate::network::{self, NetworkEvent};
 use crate::ServerConfig;
 
 /// Run the game server.
-pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
+pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> anyhow::Result<()> {
     let listener = TcpListener::bind(&config.listen_addr).await?;
     tracing::info!(addr = %config.listen_addr, "WebSocket listener ready");
 
@@ -42,10 +42,10 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
         }
     });
 
-    // Initialize the game simulation.
     let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate as f64);
     let mut sim = Simulation::new();
     let mut connections = ConnectionManager::new();
+    let mut unauth_connections = std::collections::HashMap::new();
 
     // Spawn some initial entities
     use lithos_world::world_gen::{WorldGenerator, Biome};
@@ -144,13 +144,15 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
 
     tracing::info!(tick_rate = config.tick_rate, "game loop starting");
 
+    let mut flush_counter: u64 = 0;
+
     // ── Main game loop ───────────────────────────────────────────────
     loop {
         let tick_start = Instant::now();
 
         // 1. Drain all network events.
         while let Ok(event) = event_rx.try_recv() {
-            handle_event(event, &mut sim, &mut connections, config.world_seed);
+            handle_event(event, &mut sim, &mut connections, &mut unauth_connections, config.world_seed, &pool).await;
         }
 
         // 2. Run one simulation tick.
@@ -164,6 +166,13 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
 
         // 3. Broadcast state snapshots to all connected clients.
         broadcast_snapshots(&mut sim, &connections);
+
+        // 3.5. Periodic DB flush — save all player states every 60 ticks (~3s at 20 TPS).
+        flush_counter += 1;
+        #[allow(clippy::manual_is_multiple_of)]
+        if flush_counter % 60 == 0 {
+            flush_player_states(&sim, &connections, &pool).await;
+        }
 
         // 4. Sleep until the next tick.
         let elapsed = tick_start.elapsed();
@@ -180,52 +189,81 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
 }
 
 /// Process a single network event.
-fn handle_event(
+async fn handle_event(
     event: NetworkEvent,
     sim: &mut Simulation,
     connections: &mut ConnectionManager,
+    unauth_connections: &mut std::collections::HashMap<EntityId, mpsc::UnboundedSender<Vec<u8>>>,
     world_seed: u32,
+    pool: &sqlx::PgPool,
 ) {
     match event {
         NetworkEvent::Connected { entity_id, outbound_tx } => {
-            let player_id = PlayerId::new();
-
-            // Spawn a player entity in the ECS world.
-            let ecs_entity = sim.world.spawn((
-                Position(Vec2::ZERO),
-                Velocity(Vec2::ZERO),
-                Player { id: player_id },
-                Zone(ZoneId::Overworld),
-                lithos_world::components::Health { current: 100.0, max: 100.0 },
-                lithos_world::components::Weapon { damage: 20.0, projectile_speed: 600.0, cooldown_seconds: 0.5, last_fired_time: 0.0 },
-                lithos_world::components::Collider { radius: 14.0 },
-                lithos_world::components::Inventory { items: vec![] },
-            )).id();
-
-            // Register in the entity registry.
-            let mut registry = sim.world.resource_mut::<EntityRegistry>();
-            registry.register(entity_id, ecs_entity);
-            registry.player_entities.insert(player_id, entity_id);
-
-            // Add to connection manager.
-            connections.add(player_id, entity_id, outbound_tx.clone());
-
-            // Send JoinAck to the client.
-            let ack = ServerMessage::JoinAck {
-                player_id,
-                entity_id,
-                zone: ZoneId::Overworld,
-                world_seed,
-            };
-            if let Ok(bytes) = codec::encode(&ack) {
-                let _ = outbound_tx.send(bytes);
-            }
+            unauth_connections.insert(entity_id, outbound_tx);
         }
 
         NetworkEvent::Message { entity_id, message } => {
             match message {
-                ClientMessage::Join { .. } => {
-                    // Join is handled on connect; ignore duplicate Joins.
+                ClientMessage::Join { token } => {
+                    if let Some(outbound_tx) = unauth_connections.remove(&entity_id) {
+                        let player_id = PlayerId::new(); // Just use a new one for MVP runtime tracking
+                        // MVP: Token is just the username. Check if exists.
+                        let username = if token.is_empty() { "guest".to_string() } else { token.clone() };
+                        
+                        let row = sqlx::query("SELECT x, y, health FROM players WHERE username = $1")
+                            .bind(&username)
+                            .fetch_optional(pool)
+                            .await
+                            .ok()
+                            .flatten();
+
+                        use sqlx::Row;
+                        let pos = if let Some(r) = &row { Vec2::new(r.try_get::<f64, _>("x").unwrap_or(0.0) as f32, r.try_get::<f64, _>("y").unwrap_or(0.0) as f32) } else { Vec2::ZERO };
+                        let health = if let Some(r) = &row { r.try_get::<f64, _>("health").unwrap_or(100.0) as f32 } else { 100.0 };
+
+                        // If not exists, insert for next time (fire and forget basically)
+                        if row.is_none() {
+                            let new_uuid = uuid::Uuid::new_v4();
+                            let _ = sqlx::query(
+                                "INSERT INTO players (id, username, x, y, zone_id, health, inventory) VALUES ($1, $2, 0.0, 0.0, 'overworld', 100.0, '[]')",
+                            )
+                            .bind(new_uuid)
+                            .bind(&username)
+                            .execute(pool).await;
+                        }
+
+                        // Spawn a player entity in the ECS world.
+                        let ecs_entity = sim.world.spawn((
+                            Position(pos),
+                            Velocity(Vec2::ZERO),
+                            Player { id: player_id },
+                            Zone(ZoneId::Overworld),
+                            lithos_world::components::Health { current: health, max: 100.0 },
+                            lithos_world::components::Weapon { damage: 20.0, projectile_speed: 600.0, cooldown_seconds: 0.5, last_fired_time: 0.0 },
+                            lithos_world::components::Collider { radius: 14.0 },
+                            lithos_world::components::Inventory { items: vec![] },
+                            lithos_world::components::Oxygen { current: 100.0, max: 100.0 },
+                        )).id();
+
+                        // Register in the entity registry.
+                        let mut registry = sim.world.resource_mut::<EntityRegistry>();
+                        registry.register(entity_id, ecs_entity);
+                        registry.player_entities.insert(player_id, entity_id);
+
+                        // Add to connection manager.
+                        connections.add(player_id, entity_id, username.clone(), outbound_tx.clone());
+
+                        // Send JoinAck to the client.
+                        let ack = ServerMessage::JoinAck {
+                            player_id,
+                            entity_id,
+                            zone: ZoneId::Overworld,
+                            world_seed,
+                        };
+                        if let Ok(bytes) = codec::encode(&ack) {
+                            let _ = outbound_tx.send(bytes);
+                        }
+                    }
                 }
                 ClientMessage::Move { direction, seq } => {
                     sim.world.resource_mut::<InputQueue>().moves.push(MoveInput {
@@ -267,18 +305,73 @@ fn handle_event(
                         }
                     }
                 }
+                ClientMessage::Craft { recipe } => {
+                    // Look up the ECS entity for this player.
+                    if let Some(&ecs_entity) = sim.world.resource::<EntityRegistry>().by_id.get(&entity_id) {
+                        use lithos_world::crafting::RECIPES;
+                        if let Some(recipe_def) = RECIPES.iter().find(|r| r.name == recipe) {
+                            let entity_ref = sim.world.entity(ecs_entity);
+                            if let Some(inv) = entity_ref.get::<lithos_world::components::Inventory>() {
+                                let inv_items = inv.items.clone();
+                                // Check if all ingredients are present.
+                                let mut temp_inv = inv_items.clone();
+                                let mut has_all = true;
+                                for ingredient in recipe_def.inputs {
+                                    if let Some(idx) = temp_inv.iter().position(|i| i == *ingredient) {
+                                        temp_inv.remove(idx);
+                                    } else {
+                                        has_all = false;
+                                        break;
+                                    }
+                                }
+                                if has_all {
+                                    // Consume ingredients and add output.
+                                    temp_inv.push(recipe_def.output.to_string());
+                                    sim.world.entity_mut(ecs_entity)
+                                        .get_mut::<lithos_world::components::Inventory>()
+                                        .unwrap()
+                                        .items = temp_inv;
+                                    tracing::info!(entity_id = entity_id.0, recipe = %recipe, "crafted item");
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
         NetworkEvent::Disconnected { entity_id } => {
-            // Remove from connection manager.
-            connections.remove(entity_id);
+            unauth_connections.remove(&entity_id);
+            
+            // Remove from connection manager and get username for DB save.
+            let removed_conn = connections.remove(entity_id);
 
-            // Look up the ECS entity and player ID.
+            // Look up the ECS entity and save state before despawning.
             let ecs_entity = sim.world.resource::<EntityRegistry>()
                 .by_id.get(&entity_id).copied();
 
             if let Some(ecs_entity) = ecs_entity {
+                // Save player state to DB before cleanup.
+                if let Some(conn) = &removed_conn {
+                    let entity_ref = sim.world.entity(ecs_entity);
+                    let pos = entity_ref.get::<Position>().map(|p| p.0).unwrap_or(Vec2::ZERO);
+                    let hp = entity_ref.get::<lithos_world::components::Health>().map(|h| h.current).unwrap_or(100.0);
+                    let inv = entity_ref.get::<lithos_world::components::Inventory>()
+                        .map(|i| serde_json::to_string(&i.items).unwrap_or_else(|_| "[]".to_string()))
+                        .unwrap_or_else(|| "[]".to_string());
+
+                    let _ = sqlx::query(
+                        "UPDATE players SET x = $1, y = $2, health = $3, inventory = $4, last_login = NOW() WHERE username = $5"
+                    )
+                    .bind(pos.x as f64)
+                    .bind(pos.y as f64)
+                    .bind(hp as f64)
+                    .bind(&inv)
+                    .bind(&conn.username)
+                    .execute(pool).await;
+                    tracing::info!(username = %conn.username, "saved player state to DB");
+                }
+
                 // Read player_id before taking a mutable borrow on registry.
                 let player_id = sim.world.entity(ecs_entity)
                     .get::<Player>()
@@ -291,6 +384,34 @@ fn handle_event(
                 registry.unregister(entity_id);
                 sim.world.despawn(ecs_entity);
             }
+        }
+    }
+}
+
+/// Periodically flush all connected player states to the database.
+async fn flush_player_states(
+    sim: &Simulation,
+    connections: &ConnectionManager,
+    pool: &sqlx::PgPool,
+) {
+    for conn in connections.iter() {
+        if let Some(&ecs_entity) = sim.world.resource::<EntityRegistry>().by_id.get(&conn.entity_id) {
+            let entity_ref = sim.world.entity(ecs_entity);
+            let pos = entity_ref.get::<Position>().map(|p| p.0).unwrap_or(Vec2::ZERO);
+            let hp = entity_ref.get::<lithos_world::components::Health>().map(|h| h.current).unwrap_or(100.0);
+            let inv = entity_ref.get::<lithos_world::components::Inventory>()
+                .map(|i| serde_json::to_string(&i.items).unwrap_or_else(|_| "[]".to_string()))
+                .unwrap_or_else(|| "[]".to_string());
+
+            let _ = sqlx::query(
+                "UPDATE players SET x = $1, y = $2, health = $3, inventory = $4 WHERE username = $5"
+            )
+            .bind(pos.x as f64)
+            .bind(pos.y as f64)
+            .bind(hp as f64)
+            .bind(&inv)
+            .bind(&conn.username)
+            .execute(pool).await;
         }
     }
 }

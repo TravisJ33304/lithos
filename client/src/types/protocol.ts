@@ -37,6 +37,7 @@ export type ClientMessage =
 	| { ZoneTransfer: { target: ZoneId } }
 	| { Fire: { direction: Vec2 } }
 	| "Respawn"
+	| { Craft: { recipe: string } }
 	| { Ping: { timestamp: number } };
 
 // ── Server → Client ──────────────────────────────────────────────────

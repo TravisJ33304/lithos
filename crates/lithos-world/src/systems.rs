@@ -235,6 +235,85 @@ pub fn hit_detection_system(
     }
 }
 
+/// Computes power generation and powers consumers in the same zone.
+pub fn power_grid_system(
+    generators: Query<(&Zone, &crate::components::PowerGenerator)>,
+    mut consumers: Query<(&Zone, &mut crate::components::PowerConsumer)>,
+) {
+    let mut zone_power: std::collections::HashMap<lithos_protocol::ZoneId, f32> = std::collections::HashMap::new();
+
+    for (zone, generator) in generators.iter() {
+        if generator.fuel_remaining > 0.0 {
+            *zone_power.entry(zone.0).or_insert(0.0) += generator.output_kw;
+        }
+    }
+
+    for (zone, mut consumer) in consumers.iter_mut() {
+        if let Some(available) = zone_power.get_mut(&zone.0) {
+            if *available >= consumer.required_kw {
+                *available -= consumer.required_kw;
+                consumer.is_powered = true;
+            } else {
+                consumer.is_powered = false;
+            }
+        } else {
+            consumer.is_powered = false;
+        }
+    }
+}
+
+/// Consumes oxygen if unpowered, deals damage if empty.
+#[allow(clippy::type_complexity)]
+pub fn life_support_system(
+    mut commands: Commands,
+    mut combat_events: ResMut<CombatEvents>,
+    registry: Res<EntityRegistry>,
+    mut players: Query<(Entity, &Zone, &mut crate::components::Oxygen, &mut Health), (With<Player>, Without<Dead>)>,
+    life_supports: Query<(&Zone, &crate::components::LifeSupport, &crate::components::PowerConsumer)>,
+) {
+    for (entity, p_zone, mut o2, mut health) in players.iter_mut() {
+        // Overworld space has no oxygen, but players have spacesuits. Asteroid bases need life support.
+        if matches!(p_zone.0, lithos_protocol::ZoneId::Overworld) {
+            o2.current = o2.max;
+            continue;
+        }
+
+        let mut has_life_support = false;
+        for (ls_zone, _, consumer) in life_supports.iter() {
+            if ls_zone.0 == p_zone.0 && consumer.is_powered {
+                has_life_support = true;
+                break;
+            }
+        }
+
+        if has_life_support {
+            o2.current = (o2.current + 1.0).min(o2.max);
+        } else {
+            o2.current -= 0.5; // deplete O2
+            if o2.current <= 0.0 {
+                o2.current = 0.0;
+                health.current -= 5.0; // asphyxiation damage
+
+                if let Some(&id) = registry.by_entity.get(&entity) {
+                    combat_events.health_changes.push(HealthChangedEvent {
+                        entity_id: id,
+                        health: health.current,
+                        max_health: health.max,
+                    });
+                }
+
+                if health.current <= 0.0 {
+                    health.current = 0.0;
+                    commands.entity(entity).insert(Dead);
+                    if let Some(&id) = registry.by_entity.get(&entity) {
+                        combat_events.deaths.push(PlayerDiedEvent { entity_id: id });
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Process respawn requests.
 pub fn respawn_system(
     mut commands: Commands,

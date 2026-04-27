@@ -102,3 +102,49 @@ pub struct ResourceNode {
     pub resource_type: ResourceType,
     pub yield_amount: u32,
 }
+
+// ── Base Building & Persistence ──────────────────────────────────────────────
+
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub enum TileType {
+    Wall,
+    Door,
+    Workbench,
+    Generator,
+}
+
+/// Marks an entity as a structure placed on a base grid.
+#[derive(Component, Debug, Clone)]
+pub struct BaseTile {
+    pub tile_type: TileType,
+    /// Grid coordinates (e.g. 1 unit = 40 world pixels)
+    pub grid_x: i32,
+    pub grid_y: i32,
+}
+
+/// A structure that generates power.
+#[derive(Component, Debug, Clone)]
+pub struct PowerGenerator {
+    pub output_kw: f32,
+    pub fuel_remaining: f32,
+}
+
+/// A structure that consumes power.
+#[derive(Component, Debug, Clone)]
+pub struct PowerConsumer {
+    pub required_kw: f32,
+    pub is_powered: bool,
+}
+
+/// A life support module that generates oxygen if powered.
+#[derive(Component, Debug, Clone)]
+pub struct LifeSupport {
+    pub oxygen_output_per_tick: f32,
+}
+
+/// Player's oxygen level.
+#[derive(Component, Debug, Clone)]
+pub struct Oxygen {
+    pub current: f32,
+    pub max: f32,
+}
