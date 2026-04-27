@@ -1,5 +1,5 @@
 # Lithos - Software Requirements Specification (SRS)
-**Genre:** Top-down multiplayer survival crafting (Rust meets Rimworld)
+**Genre:** Top-down multiplayer survival crafting
 **Perspective:** 2D Vector Art
 **Core Loop:** Factions build persistent bases on private asteroids, venturing into a shared, procedurally generated overworld to gather resources, fight PvE/PvP threats, and extract loot back home.
 
