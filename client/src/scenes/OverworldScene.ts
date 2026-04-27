@@ -320,7 +320,7 @@ export class OverworldScene extends Phaser.Scene {
 		});
 	}
 
-	update(_time: number, _delta: number): void {
+	update(_time: number, delta: number): void {
 		const me = this.entities.get(this.myEntityId);
 
 		if (me && !this.isDead) {
@@ -420,9 +420,31 @@ export class OverworldScene extends Phaser.Scene {
 			this.crosshair.setPosition(worldPoint.x, worldPoint.y);
 		}
 
-		for (const [_id, ent] of this.entities) {
-			ent.sprite.x += (ent.targetX - ent.sprite.x) * INTERPOLATION_SPEED;
-			ent.sprite.y += (ent.targetY - ent.sprite.y) * INTERPOLATION_SPEED;
+		for (const [id, ent] of this.entities) {
+			if (id === this.myEntityId) {
+				// Client-side prediction for local player
+				const MAX_SPEED = 200.0;
+				ent.sprite.x += direction.x * MAX_SPEED * (delta / 1000.0);
+				ent.sprite.y += direction.y * MAX_SPEED * (delta / 1000.0);
+
+				// Clamp to bounds to prevent overshooting before server corrects
+				ent.sprite.x = Phaser.Math.Clamp(ent.sprite.x, -2000, 2000);
+				ent.sprite.y = Phaser.Math.Clamp(ent.sprite.y, -2000, 2000);
+
+				// Snap to server target if we are heavily desynced (e.g. wall collision)
+				const distSq =
+					(ent.targetX - ent.sprite.x) ** 2 + (ent.targetY - ent.sprite.y) ** 2;
+				if (distSq > 150 * 150) {
+					// 150 units tolerance
+					ent.sprite.x = ent.targetX;
+					ent.sprite.y = ent.targetY;
+				}
+			} else {
+				// Interpolate other entities
+				ent.sprite.x += (ent.targetX - ent.sprite.x) * INTERPOLATION_SPEED;
+				ent.sprite.y += (ent.targetY - ent.sprite.y) * INTERPOLATION_SPEED;
+			}
+
 			ent.label.setPosition(ent.sprite.x, ent.sprite.y - 20);
 			if (ent.facingLine) {
 				ent.facingLine.setPosition(ent.sprite.x, ent.sprite.y);
@@ -430,14 +452,11 @@ export class OverworldScene extends Phaser.Scene {
 		}
 
 		// Update my facing line
-		if (!this.isDead) {
-			const me = this.entities.get(this.myEntityId);
-			if (me?.facingLine) {
-				const dx = worldPoint.x - me.sprite.x;
-				const dy = worldPoint.y - me.sprite.y;
-				const angle = Math.atan2(dy, dx);
-				me.facingLine.setRotation(angle);
-			}
+		if (!this.isDead && me?.facingLine) {
+			const dxFacing = worldPoint.x - me.sprite.x;
+			const dyFacing = worldPoint.y - me.sprite.y;
+			const angle = Math.atan2(dyFacing, dxFacing);
+			me.facingLine.setRotation(angle);
 		}
 
 		// --- HUD ---
