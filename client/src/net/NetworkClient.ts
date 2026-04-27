@@ -69,7 +69,13 @@ export class NetworkClient {
 
 			ws.onmessage = (event) => {
 				const data = new Uint8Array(event.data as ArrayBuffer);
-				const msg = decodeServerMessage(data);
+				let msg: ServerMessage;
+				try {
+					msg = decodeServerMessage(data);
+				} catch (e) {
+					console.warn("[net] failed to decode server message:", e);
+					return;
+				}
 
 				if ("Pong" in msg) {
 					const now = Date.now();
