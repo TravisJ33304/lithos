@@ -40,26 +40,29 @@ impl Simulation {
 
         // Build the per-tick schedule.
         let mut schedule = Schedule::default();
-        schedule.add_systems((
-            systems::tick_counter_system,
-            systems::process_inputs_system,
-            systems::combat_system,
-            systems::respawn_system,
-            systems::position_history_system,
-            systems::movement_system,
-            systems::bounds_system,
-            systems::power_grid_system,
-            systems::life_support_system,
-            systems::hit_detection_system,
-            systems::projectile_expiration_system,
-            systems::zone_transfer_system,
-            systems::item_pickup_system,
-            systems::npc_ai_system,
-            systems::trader_market_system,
-            systems::progression_system,
-            systems::dynamic_events_system,
-            systems::raid_state_system,
-        ).chain());
+        schedule.add_systems(
+            (
+                systems::tick_counter_system,
+                systems::process_inputs_system,
+                systems::combat_system,
+                systems::respawn_system,
+                systems::position_history_system,
+                systems::movement_system,
+                systems::bounds_system,
+                systems::power_grid_system,
+                systems::life_support_system,
+                systems::hit_detection_system,
+                systems::projectile_expiration_system,
+                systems::zone_transfer_system,
+                systems::item_pickup_system,
+                systems::npc_ai_system,
+                systems::trader_market_system,
+                systems::progression_system,
+                systems::dynamic_events_system,
+                systems::raid_state_system,
+            )
+                .chain(),
+        );
 
         Self { world, schedule }
     }

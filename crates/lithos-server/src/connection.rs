@@ -60,7 +60,11 @@ impl ConnectionManager {
     pub fn remove(&mut self, entity_id: EntityId) -> Option<ClientConnection> {
         let removed = self.clients.remove(&entity_id);
         if removed.is_some() {
-            tracing::info!(entity_id = entity_id.0, total = self.clients.len(), "client disconnected");
+            tracing::info!(
+                entity_id = entity_id.0,
+                total = self.clients.len(),
+                "client disconnected"
+            );
         }
         removed
     }

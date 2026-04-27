@@ -22,8 +22,8 @@ impl Default for SimConfig {
     fn default() -> Self {
         Self {
             dt: 1.0 / 20.0,          // 20 TPS
-            max_speed: 200.0,         // units/sec
-            world_half_size: 2000.0,  // 4000x4000 world
+            max_speed: 200.0,        // units/sec
+            world_half_size: 2000.0, // 4000x4000 world
             lag_comp_history_ticks: 64,
         }
     }

@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    ChatChannel, DynamicEventSnapshot, EntityId, EntitySnapshot, PlayerId,
-    ProgressionSnapshot, RaidStateSnapshot, TraderQuote, Vec2, ZoneId,
+    ChatChannel, DynamicEventSnapshot, EntityId, EntitySnapshot, PlayerId, ProgressionSnapshot,
+    RaidStateSnapshot, TraderQuote, Vec2, ZoneId,
 };
 
 // ---------------------------------------------------------------------------
@@ -81,9 +81,7 @@ pub enum ClientMessage {
     RequestTraderQuotes,
 
     /// Attempt to initiate a raid against a defender faction.
-    InitiateRaid {
-        defender_faction_id: u64,
-    },
+    InitiateRaid { defender_faction_id: u64 },
 }
 
 // ---------------------------------------------------------------------------
@@ -112,9 +110,7 @@ pub enum ServerMessage {
     },
 
     /// Notification that the player has been transferred to a new zone.
-    ZoneChanged {
-        zone: ZoneId,
-    },
+    ZoneChanged { zone: ZoneId },
 
     /// Notification that an entity's health changed.
     HealthChanged {
@@ -124,15 +120,13 @@ pub enum ServerMessage {
     },
 
     /// Notification that a player has died.
-    PlayerDied {
-        entity_id: EntityId,
-    },
+    PlayerDied { entity_id: EntityId },
 
     /// Notification that a player's inventory was updated.
     InventoryUpdated {
         entity_id: EntityId,
         // Using a generic string for now to represent serialized inventory data
-        items_json: String, 
+        items_json: String,
     },
 
     /// Notification that a projectile was spawned. Useful for client-side VFX.
@@ -151,15 +145,10 @@ pub enum ServerMessage {
     },
 
     /// Credits / faction vault update.
-    CreditsChanged {
-        faction_id: u64,
-        balance: i64,
-    },
+    CreditsChanged { faction_id: u64, balance: i64 },
 
     /// Updated NPC trader market quotes.
-    TraderQuotes {
-        quotes: Vec<TraderQuote>,
-    },
+    TraderQuotes { quotes: Vec<TraderQuote> },
 
     /// Updated progression stats for a player.
     ProgressionUpdated {
@@ -168,24 +157,16 @@ pub enum ServerMessage {
     },
 
     /// A dynamic world event started.
-    DynamicEventStarted {
-        event: DynamicEventSnapshot,
-    },
+    DynamicEventStarted { event: DynamicEventSnapshot },
 
     /// A dynamic world event ended.
-    DynamicEventEnded {
-        event_id: u64,
-    },
+    DynamicEventEnded { event_id: u64 },
 
     /// Defender warning for an incoming breach.
-    RaidWarning {
-        raid: RaidStateSnapshot,
-    },
+    RaidWarning { raid: RaidStateSnapshot },
 
     /// Breach became active.
-    RaidStarted {
-        raid: RaidStateSnapshot,
-    },
+    RaidStarted { raid: RaidStateSnapshot },
 
     /// Breach ended.
     RaidEnded {
@@ -202,7 +183,5 @@ pub enum ServerMessage {
     },
 
     /// The server is kicking the client.
-    Disconnect {
-        reason: String,
-    },
+    Disconnect { reason: String },
 }

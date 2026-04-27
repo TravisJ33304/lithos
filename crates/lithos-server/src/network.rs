@@ -21,9 +21,7 @@ pub enum NetworkEvent {
         message: ClientMessage,
     },
     /// A client disconnected.
-    Disconnected {
-        entity_id: EntityId,
-    },
+    Disconnected { entity_id: EntityId },
 }
 
 /// Handle a single WebSocket connection.
@@ -68,19 +66,17 @@ pub async fn handle_connection(
     // Read loop: forward inbound messages to the game loop.
     while let Some(msg_result) = ws_rx.next().await {
         match msg_result {
-            Ok(Message::Binary(data)) => {
-                match codec::decode::<ClientMessage>(&data) {
-                    Ok(client_msg) => {
-                        let _ = event_tx.send(NetworkEvent::Message {
-                            entity_id,
-                            message: client_msg,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::warn!(entity_id = entity_id.0, "decode error: {e}");
-                    }
+            Ok(Message::Binary(data)) => match codec::decode::<ClientMessage>(&data) {
+                Ok(client_msg) => {
+                    let _ = event_tx.send(NetworkEvent::Message {
+                        entity_id,
+                        message: client_msg,
+                    });
                 }
-            }
+                Err(e) => {
+                    tracing::warn!(entity_id = entity_id.0, "decode error: {e}");
+                }
+            },
             Ok(Message::Close(_)) => break,
             Ok(_) => {} // Ignore text, ping, pong frames.
             Err(e) => {

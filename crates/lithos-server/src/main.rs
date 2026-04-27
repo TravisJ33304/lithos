@@ -5,10 +5,10 @@
 //! Runs a fixed-tick game loop using [`bevy_ecs`] and accepts player
 //! connections over WebSockets via [`tokio_tungstenite`].
 
+mod auth;
 mod connection;
 mod game_loop;
 mod network;
-mod auth;
 
 use tracing_subscriber::EnvFilter;
 
@@ -52,8 +52,9 @@ impl Default for ServerConfig {
             tick_rate: 20,
             max_players: 100,
             world_seed: 12345,
-            db_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/lithos".to_string()),
+            db_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgresql://postgres:postgres@localhost:5432/lithos".to_string()
+            }),
             central_api_url: std::env::var("CENTRAL_API_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:3000".to_string()),
             central_api_key: std::env::var("CENTRAL_API_KEY").ok(),
@@ -78,11 +79,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = ServerConfig::default();
-    
+
     tracing::info!("Connecting to database...");
     let pool = sqlx::PgPool::connect(&config.db_url).await?;
     tracing::info!("Connected to Postgres!");
-    
+
     // Create necessary tables if they don't exist
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS players (
@@ -94,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
             health FLOAT NOT NULL,
             inventory JSONB NOT NULL,
             last_login TIMESTAMPTZ DEFAULT NOW()
-        );"
+        );",
     )
     .execute(&pool)
     .await?;
@@ -107,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
             grid_x INT NOT NULL,
             grid_y INT NOT NULL,
             UNIQUE(zone_id, grid_x, grid_y)
-        );"
+        );",
     )
     .execute(&pool)
     .await?;

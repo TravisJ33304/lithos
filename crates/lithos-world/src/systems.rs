@@ -7,11 +7,10 @@ use crate::components::{
     PositionHistory, Progression, Projectile, Velocity, Weapon, Zone,
 };
 use crate::resources::{
-    ActiveDynamicEvents, CombatEvents, DynamicEventBus, EntityRegistry,
-    FactionVaults, HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq,
-    PlayerDiedEvent, ProgressionQueue, ProgressionUpdatedEvent, RaidEventBus, RaidStateStore,
-    SimConfig, SpawnProjectileEvent, TickCounter, TraderMarket, ZoneChangeEvent,
-    ZoneChangeEvents,
+    ActiveDynamicEvents, CombatEvents, DynamicEventBus, EntityRegistry, FactionVaults,
+    HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq, PlayerDiedEvent,
+    ProgressionQueue, ProgressionUpdatedEvent, RaidEventBus, RaidStateStore, SimConfig,
+    SpawnProjectileEvent, TickCounter, TraderMarket, ZoneChangeEvent, ZoneChangeEvents,
 };
 
 /// Advance the tick counter.
@@ -54,7 +53,10 @@ pub fn position_history_system(
 }
 
 /// Apply velocity to position (Euler integration).
-pub fn movement_system(config: Res<SimConfig>, mut query: Query<(&mut Position, &Velocity), Without<Dead>>) {
+pub fn movement_system(
+    config: Res<SimConfig>,
+    mut query: Query<(&mut Position, &Velocity), Without<Dead>>,
+) {
     for (mut pos, vel) in query.iter_mut() {
         pos.0 += vel.0 * config.dt;
     }
@@ -117,50 +119,54 @@ pub fn combat_system(
     mut query: Query<(&Position, &mut Weapon, &Zone), Without<Dead>>,
 ) {
     let current_time = time.tick as f64 * config.dt as f64;
-    
+
     // Clear old events
     combat_events.spawn_projectiles.clear();
-    
+
     for req in input_queue.fires.drain(..) {
         if let Some(&ecs_entity) = registry.by_id.get(&req.entity_id)
             && let Ok((pos, mut weapon, zone)) = query.get_mut(ecs_entity)
             && current_time >= weapon.last_fired_time + weapon.cooldown_seconds as f64
         {
-                    weapon.last_fired_time = current_time;
-                    
-                    let dir = req.direction.normalize();
-                    if dir.x == 0.0 && dir.y == 0.0 { continue; }
-                    
-                    let proj_vel = dir * weapon.projectile_speed;
-                    // Spawn projectile slightly ahead
-                    let proj_pos = pos.0 + dir * 20.0;
-                    
-                    let new_id = registry.next_entity_id();
-                    let rewind_ticks = ((req.client_latency_ms as f32 / 1000.0) / config.dt)
-                        .round()
-                        .clamp(0.0, config.lag_comp_history_ticks as f32)
-                        as u32;
-                    let new_ecs_entity = commands.spawn((
-                        Position(proj_pos),
-                        Velocity(proj_vel),
-                        Zone(zone.0),
-                        Projectile {
-                            damage: weapon.damage,
-                            owner: req.entity_id,
-                            spawn_time: current_time,
-                            lifespan_seconds: 2.0,
-                            rewind_ticks,
-                        },
-                        Collider { radius: 5.0 },
-                    )).id();
-                    
-                    registry.register(new_id, new_ecs_entity);
-                    
-                    combat_events.spawn_projectiles.push(SpawnProjectileEvent {
-                        entity_id: new_id,
-                        position: proj_pos,
-                        velocity: proj_vel,
-                    });
+            weapon.last_fired_time = current_time;
+
+            let dir = req.direction.normalize();
+            if dir.x == 0.0 && dir.y == 0.0 {
+                continue;
+            }
+
+            let proj_vel = dir * weapon.projectile_speed;
+            // Spawn projectile slightly ahead
+            let proj_pos = pos.0 + dir * 20.0;
+
+            let new_id = registry.next_entity_id();
+            let rewind_ticks = ((req.client_latency_ms as f32 / 1000.0) / config.dt)
+                .round()
+                .clamp(0.0, config.lag_comp_history_ticks as f32)
+                as u32;
+            let new_ecs_entity = commands
+                .spawn((
+                    Position(proj_pos),
+                    Velocity(proj_vel),
+                    Zone(zone.0),
+                    Projectile {
+                        damage: weapon.damage,
+                        owner: req.entity_id,
+                        spawn_time: current_time,
+                        lifespan_seconds: 2.0,
+                        rewind_ticks,
+                    },
+                    Collider { radius: 5.0 },
+                ))
+                .id();
+
+            registry.register(new_id, new_ecs_entity);
+
+            combat_events.spawn_projectiles.push(SpawnProjectileEvent {
+                entity_id: new_id,
+                position: proj_pos,
+                velocity: proj_vel,
+            });
         }
     }
 }
@@ -174,7 +180,7 @@ pub fn projectile_expiration_system(
     query: Query<(Entity, &Projectile)>,
 ) {
     let current_time = time.tick as f64 * config.dt as f64;
-    
+
     for (entity, proj) in query.iter() {
         if current_time >= proj.spawn_time + proj.lifespan_seconds as f64 {
             if let Some(id) = registry.by_entity.get(&entity).copied() {
@@ -216,7 +222,7 @@ pub fn hit_detection_system(
     for (proj_ent, proj, proj_pos, proj_col, proj_zone) in projectiles.iter() {
         let mut hit = false;
         let rewind_tick = tick.tick.saturating_sub(proj.rewind_ticks as u64);
-        
+
         for (
             target_ent,
             mut target_health,
@@ -228,9 +234,13 @@ pub fn hit_detection_system(
             target_player,
         ) in targets.iter_mut()
         {
-            if proj_zone.0 != target_zone.0 { continue; }
+            if proj_zone.0 != target_zone.0 {
+                continue;
+            }
             if let Some(&target_id) = registry.by_entity.get(&target_ent) {
-                if target_id == proj.owner { continue; }
+                if target_id == proj.owner {
+                    continue;
+                }
 
                 let rewound_pos = if proj.rewind_ticks == 0 {
                     target_pos.0
@@ -245,20 +255,20 @@ pub fn hit_detection_system(
                 } else {
                     target_pos.0
                 };
-                
+
                 let dist_sq = (proj_pos.0 - rewound_pos).length_squared();
                 let combined_radius = proj_col.radius + target_col.radius;
-                
+
                 if dist_sq <= combined_radius * combined_radius {
                     target_health.current -= proj.damage;
                     hit = true;
-                    
+
                     combat_events.health_changes.push(HealthChangedEvent {
                         entity_id: target_id,
                         health: target_health.current,
                         max_health: target_health.max,
                     });
-                    
+
                     if target_health.current <= 0.0 {
                         target_health.current = 0.0;
                         commands.entity(target_ent).insert(Dead);
@@ -278,24 +288,26 @@ pub fn hit_detection_system(
                                 },
                             );
                         }
-                        
+
                         // Drop all inventory items
                         let mut offset = 0.0;
                         for item in target_inv.items.drain(..) {
                             let drop_pos = rewound_pos + lithos_protocol::Vec2::new(offset, offset);
                             offset += 10.0; // simple spread
-                            
+
                             let item_id = registry.next_entity_id();
-                            let item_ent = commands.spawn((
-                                Position(drop_pos),
-                                Velocity(lithos_protocol::Vec2::ZERO),
-                                Zone(target_zone.0),
-                                Collider { radius: 6.0 },
-                                Item { item_type: item },
-                            )).id();
+                            let item_ent = commands
+                                .spawn((
+                                    Position(drop_pos),
+                                    Velocity(lithos_protocol::Vec2::ZERO),
+                                    Zone(target_zone.0),
+                                    Collider { radius: 6.0 },
+                                    Item { item_type: item },
+                                ))
+                                .id();
                             registry.register(item_id, item_ent);
                         }
-                        
+
                         // Notify client of empty inventory
                         combat_events.inventory_updates.push(InventoryUpdatedEvent {
                             entity_id: target_id,
@@ -306,7 +318,7 @@ pub fn hit_detection_system(
                 }
             }
         }
-        
+
         if hit {
             if let Some(id) = registry.by_entity.get(&proj_ent).copied() {
                 registry.unregister(id);
@@ -321,7 +333,8 @@ pub fn power_grid_system(
     generators: Query<(&Zone, &crate::components::PowerGenerator)>,
     mut consumers: Query<(&Zone, &mut crate::components::PowerConsumer)>,
 ) {
-    let mut zone_power: std::collections::HashMap<lithos_protocol::ZoneId, f32> = std::collections::HashMap::new();
+    let mut zone_power: std::collections::HashMap<lithos_protocol::ZoneId, f32> =
+        std::collections::HashMap::new();
 
     for (zone, generator) in generators.iter() {
         if generator.fuel_remaining > 0.0 {
@@ -349,8 +362,15 @@ pub fn life_support_system(
     mut commands: Commands,
     mut combat_events: ResMut<CombatEvents>,
     registry: Res<EntityRegistry>,
-    mut players: Query<(Entity, &Zone, &mut crate::components::Oxygen, &mut Health), (With<Player>, Without<Dead>)>,
-    life_supports: Query<(&Zone, &crate::components::LifeSupport, &crate::components::PowerConsumer)>,
+    mut players: Query<
+        (Entity, &Zone, &mut crate::components::Oxygen, &mut Health),
+        (With<Player>, Without<Dead>),
+    >,
+    life_supports: Query<(
+        &Zone,
+        &crate::components::LifeSupport,
+        &crate::components::PowerConsumer,
+    )>,
 ) {
     for (entity, p_zone, mut o2, mut health) in players.iter_mut() {
         // Overworld space has no oxygen, but players have spacesuits. Asteroid bases need life support.
@@ -406,12 +426,12 @@ pub fn respawn_system(
         if let Some(&ecs_entity) = registry.by_id.get(&req.entity_id)
             && let Ok((entity, mut health, mut pos, mut zone)) = query.get_mut(ecs_entity)
         {
-                health.current = health.max;
-                pos.0 = lithos_protocol::Vec2::ZERO; // Respawn at origin for now
-                zone.0 = lithos_protocol::ZoneId::Overworld; // Send back to Overworld
-                commands.entity(entity).remove::<Dead>();
-            }
+            health.current = health.max;
+            pos.0 = lithos_protocol::Vec2::ZERO; // Respawn at origin for now
+            zone.0 = lithos_protocol::ZoneId::Overworld; // Send back to Overworld
+            commands.entity(entity).remove::<Dead>();
         }
+    }
 }
 
 /// Process item pickups when players collide with items.
@@ -420,30 +440,40 @@ pub fn item_pickup_system(
     mut commands: Commands,
     mut registry: ResMut<EntityRegistry>,
     mut combat_events: ResMut<CombatEvents>,
-    mut players: Query<(Entity, &mut Inventory, &Position, &Collider, &Zone), (With<Player>, Without<Dead>)>,
+    mut players: Query<
+        (Entity, &mut Inventory, &Position, &Collider, &Zone),
+        (With<Player>, Without<Dead>),
+    >,
     items: Query<(Entity, &Item, &Position, &Collider, &Zone)>,
 ) {
     for (player_ent, mut player_inv, player_pos, player_col, player_zone) in players.iter_mut() {
         if let Some(&player_id) = registry.by_entity.get(&player_ent) {
             for (item_ent, item, item_pos, item_col, item_zone) in items.iter() {
-                if player_zone.0 != item_zone.0 { continue; }
-                
+                if player_zone.0 != item_zone.0 {
+                    continue;
+                }
+
                 let dist_sq = (player_pos.0 - item_pos.0).length_squared();
                 let combined_radius = player_col.radius + item_col.radius;
-                
+
                 if dist_sq <= combined_radius * combined_radius {
                     // Pick up item!
                     player_inv.items.push(item.item_type.clone());
-                    
+
                     combat_events.inventory_updates.push(InventoryUpdatedEvent {
                         entity_id: player_id,
                         // quick JSON string building for MVP
                         items_json: format!(
                             "[{}]",
-                            player_inv.items.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(", ")
+                            player_inv
+                                .items
+                                .iter()
+                                .map(|s| format!("\"{}\"", s))
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         ),
                     });
-                    
+
                     if let Some(id) = registry.by_entity.get(&item_ent).copied() {
                         registry.unregister(id);
                     }
@@ -549,9 +579,9 @@ pub fn trader_market_system(
         let sold_to_trader = cycle as i32;
         let bought_from_trader = (6 - cycle) as i32;
         quote.apply_daily_volume(sold_to_trader, bought_from_trader);
-        quote.available_credits =
-            (quote.available_credits + i64::from(bought_from_trader * 20 - sold_to_trader * 10))
-                .clamp(500, 10_000);
+        quote.available_credits = (quote.available_credits
+            + i64::from(bought_from_trader * 20 - sold_to_trader * 10))
+        .clamp(500, 10_000);
     }
 }
 
@@ -706,18 +736,20 @@ mod tests {
     }
 
     fn spawn_player(world: &mut World, entity_id: EntityId) -> bevy_ecs::entity::Entity {
-        let ecs_entity = world.spawn((
-            Position(Vec2::ZERO),
-            Velocity(Vec2::ZERO),
-            PositionHistory::default(),
-            Progression::default(),
-            Player {
-                id: PlayerId::new(),
-                auth_subject: None,
-                faction_id: None,
-            },
-            Zone(ZoneId::Overworld),
-        )).id();
+        let ecs_entity = world
+            .spawn((
+                Position(Vec2::ZERO),
+                Velocity(Vec2::ZERO),
+                PositionHistory::default(),
+                Progression::default(),
+                Player {
+                    id: PlayerId::new(),
+                    auth_subject: None,
+                    faction_id: None,
+                },
+                Zone(ZoneId::Overworld),
+            ))
+            .id();
 
         let mut registry = world.resource_mut::<EntityRegistry>();
         registry.register(entity_id, ecs_entity);
@@ -731,7 +763,11 @@ mod tests {
         let ecs_entity = spawn_player(&mut world, eid);
 
         // Set velocity directly.
-        world.entity_mut(ecs_entity).get_mut::<Velocity>().unwrap().0 = Vec2::new(100.0, 0.0);
+        world
+            .entity_mut(ecs_entity)
+            .get_mut::<Velocity>()
+            .unwrap()
+            .0 = Vec2::new(100.0, 0.0);
 
         // Run movement system.
         let mut schedule = Schedule::default();
@@ -751,7 +787,11 @@ mod tests {
         let ecs_entity = spawn_player(&mut world, eid);
 
         // Place entity far outside bounds.
-        world.entity_mut(ecs_entity).get_mut::<Position>().unwrap().0 = Vec2::new(9999.0, -9999.0);
+        world
+            .entity_mut(ecs_entity)
+            .get_mut::<Position>()
+            .unwrap()
+            .0 = Vec2::new(9999.0, -9999.0);
 
         let mut schedule = Schedule::default();
         schedule.add_systems(bounds_system);
@@ -792,12 +832,13 @@ mod tests {
         let ecs_entity = spawn_player(&mut world, eid);
 
         // Queue a zone transfer.
-        world.resource_mut::<InputQueue>().zone_transfers.push(
-            ZoneTransferRequest {
+        world
+            .resource_mut::<InputQueue>()
+            .zone_transfers
+            .push(ZoneTransferRequest {
                 entity_id: eid,
                 target: ZoneId::AsteroidBase(1),
-            },
-        );
+            });
 
         let mut schedule = Schedule::default();
         schedule.add_systems(zone_transfer_system);

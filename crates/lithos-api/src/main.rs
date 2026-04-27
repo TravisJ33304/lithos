@@ -39,8 +39,9 @@ impl Default for ApiConfig {
         Self {
             bind_addr: std::env::var("API_BIND_ADDR")
                 .unwrap_or_else(|_| "0.0.0.0:3000".to_string()),
-            database_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/lithos".to_string()),
+            database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgresql://postgres:postgres@localhost:5432/lithos".to_string()
+            }),
             supabase_jwks_url: std::env::var("SUPABASE_JWKS_URL").ok(),
             supabase_jwt_issuer: std::env::var("SUPABASE_JWT_ISSUER").ok(),
             supabase_jwt_audience: std::env::var("SUPABASE_JWT_AUDIENCE").ok(),
@@ -259,16 +260,22 @@ async fn decode_supabase_claims(token: &str, config: &ApiConfig) -> Result<RawCl
         validation.set_audience(&[aud]);
     }
 
-    let decoded = decode::<RawClaims>(token, &decoding_key, &validation)
-        .context("JWT validation failed")?;
+    let decoded =
+        decode::<RawClaims>(token, &decoding_key, &validation).context("JWT validation failed")?;
     Ok(decoded.claims)
 }
 
-async fn require_user_auth(headers: &HeaderMap, state: &AppState) -> Result<AuthContext, (StatusCode, String)> {
+async fn require_user_auth(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<AuthContext, (StatusCode, String)> {
     let authz = require_header(headers, "authorization")?;
-    let token = authz
-        .strip_prefix("Bearer ")
-        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "expected Bearer token".to_string()))?;
+    let token = authz.strip_prefix("Bearer ").ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "expected Bearer token".to_string(),
+        )
+    })?;
 
     let claims = decode_supabase_claims(token, &state.config)
         .await
@@ -276,7 +283,11 @@ async fn require_user_auth(headers: &HeaderMap, state: &AppState) -> Result<Auth
 
     let username = claims
         .preferred_username
-        .or_else(|| claims.email.and_then(|email| email.split('@').next().map(ToOwned::to_owned)))
+        .or_else(|| {
+            claims
+                .email
+                .and_then(|email| email.split('@').next().map(ToOwned::to_owned))
+        })
         .map(|u| normalize_username(&u))
         .unwrap_or_else(|| {
             let short = claims.sub.chars().take(8).collect::<String>();
@@ -484,7 +495,10 @@ async fn create_faction(
     let auth = require_user_auth(&headers, &state).await?;
     let name = payload.name.trim();
     if name.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "faction name cannot be empty".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "faction name cannot be empty".to_string(),
+        ));
     }
 
     let mut tx = state.pool.begin().await.map_err(internal_err)?;
@@ -496,14 +510,12 @@ async fn create_faction(
         .map_err(internal_err)?;
     let faction_id = row.try_get::<i64, _>("id").map_err(internal_err)?;
 
-    sqlx::query(
-        "INSERT INTO faction_members (faction_id, user_id, role) VALUES ($1, $2, 'owner')",
-    )
-    .bind(faction_id)
-    .bind(&auth.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(internal_err)?;
+    sqlx::query("INSERT INTO faction_members (faction_id, user_id, role) VALUES ($1, $2, 'owner')")
+        .bind(faction_id)
+        .bind(&auth.user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(internal_err)?;
 
     sqlx::query("UPDATE player_profiles SET faction_id = $1 WHERE user_id = $2")
         .bind(faction_id)
@@ -514,10 +526,15 @@ async fn create_faction(
 
     tx.commit().await.map_err(internal_err)?;
 
-    Ok((StatusCode::CREATED, Json(serde_json::json!({ "faction_id": faction_id }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({ "faction_id": faction_id })),
+    ))
 }
 
-async fn list_factions(State(state): State<AppState>) -> Result<impl IntoResponse, (StatusCode, String)> {
+async fn list_factions(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     let factions = sqlx::query("SELECT id, name, wealth FROM factions ORDER BY name")
         .fetch_all(&state.pool)
         .await
@@ -628,7 +645,10 @@ async fn add_faction_member(
          ON CONFLICT (user_id) DO UPDATE SET faction_id = EXCLUDED.faction_id",
     )
     .bind(&payload.user_id)
-    .bind(format!("pilot-{}", &payload.user_id.chars().take(8).collect::<String>()))
+    .bind(format!(
+        "pilot-{}",
+        &payload.user_id.chars().take(8).collect::<String>()
+    ))
     .bind(faction_id)
     .execute(&state.pool)
     .await
@@ -651,12 +671,14 @@ async fn remove_faction_member(
         .execute(&state.pool)
         .await
         .map_err(internal_err)?;
-    sqlx::query("UPDATE player_profiles SET faction_id = NULL WHERE user_id = $1 AND faction_id = $2")
-        .bind(&user_id)
-        .bind(faction_id)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_err)?;
+    sqlx::query(
+        "UPDATE player_profiles SET faction_id = NULL WHERE user_id = $1 AND faction_id = $2",
+    )
+    .bind(&user_id)
+    .bind(faction_id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_err)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -666,7 +688,9 @@ async fn list_servers(State(state): State<AppState>) -> impl IntoResponse {
     let now = now_unix_ms();
 
     let mut registry = state.server_registry.write().await;
-    registry.retain(|_, record| now.saturating_sub(record.listing.last_heartbeat_unix_ms) < stale_after_ms);
+    registry.retain(|_, record| {
+        now.saturating_sub(record.listing.last_heartbeat_unix_ms) < stale_after_ms
+    });
 
     let mut listings = registry
         .values()
@@ -711,19 +735,24 @@ async fn heartbeat_server(
         "received server heartbeat"
     );
 
-    state.server_registry.write().await.insert(
-        payload.server_id,
-        ServerRecord { listing },
-    );
+    state
+        .server_registry
+        .write()
+        .await
+        .insert(payload.server_id, ServerRecord { listing });
 
     Ok((StatusCode::OK, Json(serde_json::json!({ "ok": true }))))
 }
 
-async fn get_leaderboard(State(state): State<AppState>) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let rows = sqlx::query("SELECT id, name, wealth FROM factions ORDER BY wealth DESC, name ASC LIMIT 50")
-        .fetch_all(&state.pool)
-        .await
-        .map_err(internal_err)?;
+async fn get_leaderboard(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let rows = sqlx::query(
+        "SELECT id, name, wealth FROM factions ORDER BY wealth DESC, name ASC LIMIT 50",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal_err)?;
 
     let mut entries = Vec::with_capacity(rows.len());
     for row in rows {
@@ -796,15 +825,18 @@ async fn admin_wipe(
     }))
 }
 
-async fn ensure_owner(pool: &sqlx::PgPool, faction_id: i64, user_id: &str) -> Result<(), (StatusCode, String)> {
-    let row = sqlx::query(
-        "SELECT role FROM faction_members WHERE faction_id = $1 AND user_id = $2",
-    )
-    .bind(faction_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(internal_err)?;
+async fn ensure_owner(
+    pool: &sqlx::PgPool,
+    faction_id: i64,
+    user_id: &str,
+) -> Result<(), (StatusCode, String)> {
+    let row =
+        sqlx::query("SELECT role FROM faction_members WHERE faction_id = $1 AND user_id = $2")
+            .bind(faction_id)
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(internal_err)?;
 
     let Some(row) = row else {
         return Err((StatusCode::FORBIDDEN, "not a faction member".to_string()));
@@ -852,7 +884,10 @@ async fn main() -> Result<()> {
         .route("/health", get(health))
         .route("/v1/profile", get(get_profile).post(upsert_profile))
         .route("/v1/factions", get(list_factions).post(create_faction))
-        .route("/v1/factions/{faction_id}", patch(update_faction).delete(delete_faction))
+        .route(
+            "/v1/factions/{faction_id}",
+            patch(update_faction).delete(delete_faction),
+        )
         .route(
             "/v1/factions/{faction_id}/members",
             post(add_faction_member),

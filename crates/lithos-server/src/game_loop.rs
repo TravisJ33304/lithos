@@ -19,17 +19,17 @@ use lithos_world::components::{
     TileType, Velocity, Weapon, Zone,
 };
 use lithos_world::resources::{
-    ChatEvent, ChatEvents, EntityRegistry, FactionVaults, FireRequest, InputQueue, LastProcessedSeq,
-    MoveInput, ProgressionQueue, RaidState, RaidStateStore, RespawnRequest, SimConfig,
-    TraderMarket, XpGainRequest, ZoneChangeEvents, ZoneTransferRequest,
+    ChatEvent, ChatEvents, EntityRegistry, FactionVaults, FireRequest, InputQueue,
+    LastProcessedSeq, MoveInput, ProgressionQueue, RaidState, RaidStateStore, RespawnRequest,
+    SimConfig, TraderMarket, XpGainRequest, ZoneChangeEvents, ZoneTransferRequest,
 };
 use lithos_world::simulation::Simulation;
 use lithos_world::world_gen::{Biome, WorldGenerator};
 
+use crate::ServerConfig;
 use crate::auth;
 use crate::connection::ConnectionManager;
 use crate::network::{self, NetworkEvent};
-use crate::ServerConfig;
 
 #[derive(Debug, Clone)]
 struct AuthJoin {
@@ -89,7 +89,12 @@ async fn resolve_join_from_token(token: &str, config: &ServerConfig) -> Result<A
         let username = claims
             .preferred_username
             .clone()
-            .or_else(|| claims.email.clone().and_then(|email| email.split('@').next().map(ToOwned::to_owned)))
+            .or_else(|| {
+                claims
+                    .email
+                    .clone()
+                    .and_then(|email| email.split('@').next().map(ToOwned::to_owned))
+            })
             .unwrap_or_else(|| {
                 let short = claims.sub.chars().take(8).collect::<String>();
                 format!("pilot-{short}")
@@ -173,7 +178,10 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
 
     // Hostiles
     for _ in 0..100 {
-        let pos = Vec2::new(rng.gen_range(-4000.0..4000.0), rng.gen_range(-4000.0..4000.0));
+        let pos = Vec2::new(
+            rng.gen_range(-4000.0..4000.0),
+            rng.gen_range(-4000.0..4000.0),
+        );
         let biome = generator.get_biome(pos);
         if biome == Biome::OuterRim {
             continue;
@@ -209,12 +217,17 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                 },
             ))
             .id();
-        sim.world.resource_mut::<EntityRegistry>().register(npc_id, ecs_ent);
+        sim.world
+            .resource_mut::<EntityRegistry>()
+            .register(npc_id, ecs_ent);
     }
 
     // Traders
     for _ in 0..20 {
-        let pos = Vec2::new(rng.gen_range(-4000.0..4000.0), rng.gen_range(-4000.0..4000.0));
+        let pos = Vec2::new(
+            rng.gen_range(-4000.0..4000.0),
+            rng.gen_range(-4000.0..4000.0),
+        );
         let biome = generator.get_biome(pos);
         if biome == Biome::Core {
             continue;
@@ -243,12 +256,17 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                 },
             ))
             .id();
-        sim.world.resource_mut::<EntityRegistry>().register(npc_id, ecs_ent);
+        sim.world
+            .resource_mut::<EntityRegistry>()
+            .register(npc_id, ecs_ent);
     }
 
     // Resource nodes
     for _ in 0..200 {
-        let pos = Vec2::new(rng.gen_range(-4000.0..4000.0), rng.gen_range(-4000.0..4000.0));
+        let pos = Vec2::new(
+            rng.gen_range(-4000.0..4000.0),
+            rng.gen_range(-4000.0..4000.0),
+        );
         let biome = generator.get_biome(pos);
         let resource_type = match biome {
             Biome::OuterRim => ResourceType::Iron,
@@ -281,7 +299,9 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                 },
             ))
             .id();
-        sim.world.resource_mut::<EntityRegistry>().register(node_id, ecs_ent);
+        sim.world
+            .resource_mut::<EntityRegistry>()
+            .register(node_id, ecs_ent);
     }
 }
 
@@ -452,12 +472,11 @@ async fn handle_event(
                     }
                 };
 
-                let row = sqlx::query(
-                    "SELECT x, y, health, faction_id FROM players WHERE username = $1",
-                )
-                .bind(&auth.username)
-                .fetch_optional(pool)
-                .await?;
+                let row =
+                    sqlx::query("SELECT x, y, health, faction_id FROM players WHERE username = $1")
+                        .bind(&auth.username)
+                        .fetch_optional(pool)
+                        .await?;
 
                 let pos = row
                     .as_ref()
@@ -561,11 +580,14 @@ async fn handle_event(
                 );
             }
             ClientMessage::Move { direction, seq } => {
-                sim.world.resource_mut::<InputQueue>().moves.push(MoveInput {
-                    entity_id,
-                    direction,
-                    seq,
-                });
+                sim.world
+                    .resource_mut::<InputQueue>()
+                    .moves
+                    .push(MoveInput {
+                        entity_id,
+                        direction,
+                        seq,
+                    });
             }
             ClientMessage::ZoneTransfer { target } => {
                 sim.world
@@ -577,11 +599,14 @@ async fn handle_event(
                 direction,
                 client_latency_ms,
             } => {
-                sim.world.resource_mut::<InputQueue>().fires.push(FireRequest {
-                    entity_id,
-                    direction,
-                    client_latency_ms,
-                });
+                sim.world
+                    .resource_mut::<InputQueue>()
+                    .fires
+                    .push(FireRequest {
+                        entity_id,
+                        direction,
+                        client_latency_ms,
+                    });
                 sim.world
                     .resource_mut::<ProgressionQueue>()
                     .gains
@@ -608,7 +633,9 @@ async fn handle_event(
                 );
             }
             ClientMessage::Craft { recipe } => {
-                let Some(&ecs_entity) = sim.world.resource::<EntityRegistry>().by_id.get(&entity_id) else {
+                let Some(&ecs_entity) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&entity_id)
+                else {
                     return Ok(());
                 };
 
@@ -669,13 +696,18 @@ async fn handle_event(
                 grid_x,
                 grid_y,
             } => {
-                let Some(&ecs_entity) = sim.world.resource::<EntityRegistry>().by_id.get(&entity_id) else {
+                let Some(&ecs_entity) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&entity_id)
+                else {
                     return Ok(());
                 };
 
                 let (zone, mut inv_items) = {
                     let entity_ref = sim.world.entity(ecs_entity);
-                    let zone = entity_ref.get::<Zone>().map(|z| z.0).unwrap_or(ZoneId::Overworld);
+                    let zone = entity_ref
+                        .get::<Zone>()
+                        .map(|z| z.0)
+                        .unwrap_or(ZoneId::Overworld);
                     let items = entity_ref
                         .get::<Inventory>()
                         .map(|inv| inv.items.clone())
@@ -729,7 +761,9 @@ async fn handle_event(
                         TileType::Wall => {}
                     }
                     let ecs_id = entity.id();
-                    sim.world.resource_mut::<EntityRegistry>().register(id, ecs_id);
+                    sim.world
+                        .resource_mut::<EntityRegistry>()
+                        .register(id, ecs_id);
 
                     let zone_str = match zone {
                         ZoneId::Overworld => "overworld".to_string(),
@@ -777,13 +811,16 @@ async fn handle_event(
                     trimmed.to_string()
                 };
                 let faction_id = connections.get(entity_id).and_then(|conn| conn.faction_id);
-                sim.world.resource_mut::<ChatEvents>().messages.push(ChatEvent {
-                    from_entity_id: entity_id,
-                    channel,
-                    text: clipped,
-                    sent_at_unix_ms: now_unix_ms(),
-                    faction_id,
-                });
+                sim.world
+                    .resource_mut::<ChatEvents>()
+                    .messages
+                    .push(ChatEvent {
+                        from_entity_id: entity_id,
+                        channel,
+                        text: clipped,
+                        sent_at_unix_ms: now_unix_ms(),
+                        faction_id,
+                    });
             }
             ClientMessage::RequestTraderQuotes => {
                 let quotes = sim
@@ -793,12 +830,18 @@ async fn handle_event(
                     .iter()
                     .map(|quote| quote.as_quote())
                     .collect::<Vec<_>>();
-                send_to_entity(connections, entity_id, &ServerMessage::TraderQuotes { quotes });
+                send_to_entity(
+                    connections,
+                    entity_id,
+                    &ServerMessage::TraderQuotes { quotes },
+                );
             }
             ClientMessage::InitiateRaid {
                 defender_faction_id,
             } => {
-                let Some(attacker_faction_id) = connections.get(entity_id).and_then(|conn| conn.faction_id) else {
+                let Some(attacker_faction_id) =
+                    connections.get(entity_id).and_then(|conn| conn.faction_id)
+                else {
                     send_to_entity(
                         connections,
                         entity_id,
@@ -823,7 +866,10 @@ async fn handle_event(
                     breach_active: false,
                 };
 
-                sim.world.resource_mut::<RaidStateStore>().raids.push(raid.clone());
+                sim.world
+                    .resource_mut::<RaidStateStore>()
+                    .raids
+                    .push(raid.clone());
 
                 let warning = ServerMessage::RaidWarning {
                     raid: raid_snapshot(&raid, tick, dt),
@@ -846,14 +892,19 @@ async fn handle_event(
             if let Some(ecs_entity) = ecs_entity {
                 if let Some(conn) = &removed_conn {
                     let entity_ref = sim.world.entity(ecs_entity);
-                    let pos = entity_ref.get::<Position>().map(|p| p.0).unwrap_or(Vec2::ZERO);
+                    let pos = entity_ref
+                        .get::<Position>()
+                        .map(|p| p.0)
+                        .unwrap_or(Vec2::ZERO);
                     let hp = entity_ref
                         .get::<Health>()
                         .map(|h| h.current)
                         .unwrap_or(100.0);
                     let inv = entity_ref
                         .get::<Inventory>()
-                        .map(|i| serde_json::to_string(&i.items).unwrap_or_else(|_| "[]".to_string()))
+                        .map(|i| {
+                            serde_json::to_string(&i.items).unwrap_or_else(|_| "[]".to_string())
+                        })
                         .unwrap_or_else(|| "[]".to_string());
 
                     let _ = sqlx::query(
@@ -882,11 +933,23 @@ async fn handle_event(
     Ok(())
 }
 
-async fn flush_player_states(sim: &Simulation, connections: &ConnectionManager, pool: &sqlx::PgPool) {
+async fn flush_player_states(
+    sim: &Simulation,
+    connections: &ConnectionManager,
+    pool: &sqlx::PgPool,
+) {
     for conn in connections.iter() {
-        if let Some(&ecs_entity) = sim.world.resource::<EntityRegistry>().by_id.get(&conn.entity_id) {
+        if let Some(&ecs_entity) = sim
+            .world
+            .resource::<EntityRegistry>()
+            .by_id
+            .get(&conn.entity_id)
+        {
             let entity_ref = sim.world.entity(ecs_entity);
-            let pos = entity_ref.get::<Position>().map(|p| p.0).unwrap_or(Vec2::ZERO);
+            let pos = entity_ref
+                .get::<Position>()
+                .map(|p| p.0)
+                .unwrap_or(Vec2::ZERO);
             let hp = entity_ref
                 .get::<Health>()
                 .map(|h| h.current)
@@ -1005,13 +1068,17 @@ fn send_zone_changes(sim: &mut Simulation, connections: &ConnectionManager) {
         send_to_entity(
             connections,
             event.entity_id,
-            &ServerMessage::ZoneChanged { zone: event.new_zone },
+            &ServerMessage::ZoneChanged {
+                zone: event.new_zone,
+            },
         );
     }
 }
 
 fn send_combat_events(sim: &mut Simulation, connections: &ConnectionManager) {
-    let events = sim.world.resource::<lithos_world::resources::CombatEvents>();
+    let events = sim
+        .world
+        .resource::<lithos_world::resources::CombatEvents>();
 
     for event in &events.spawn_projectiles {
         broadcast_all(
