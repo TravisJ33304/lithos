@@ -8,7 +8,7 @@ use lithos_protocol::{
     ClientMessage, EntityId, EntitySnapshot, PlayerId, ServerMessage, Vec2, ZoneId, codec,
 };
 use lithos_world::components::{Player, Position, Velocity, Zone};
-use lithos_world::resources::{EntityRegistry, InputQueue, LastProcessedSeq, MoveInput, ZoneChangeEvents, ZoneTransferRequest};
+use lithos_world::resources::{EntityRegistry, InputQueue, LastProcessedSeq, MoveInput, ZoneChangeEvents, ZoneTransferRequest, FireRequest, RespawnRequest};
 use lithos_world::simulation::Simulation;
 
 use crate::connection::ConnectionManager;
@@ -63,6 +63,9 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
 
         // 2.5. Send ZoneChanged messages for any zone transfers this tick.
         send_zone_changes(&mut sim, &connections);
+        
+        // 2.6. Send combat-related events.
+        send_combat_events(&mut sim, &connections);
 
         // 3. Broadcast state snapshots to all connected clients.
         broadcast_snapshots(&mut sim, &connections);
@@ -97,6 +100,10 @@ fn handle_event(
                 Velocity(Vec2::ZERO),
                 Player { id: player_id },
                 Zone(ZoneId::Overworld),
+                lithos_world::components::Health { current: 100.0, max: 100.0 },
+                lithos_world::components::Weapon { damage: 20.0, projectile_speed: 600.0, cooldown_seconds: 0.5, last_fired_time: 0.0 },
+                lithos_world::components::Collider { radius: 14.0 },
+                lithos_world::components::Inventory { items: vec![] },
             )).id();
 
             // Register in the entity registry.
@@ -133,6 +140,16 @@ fn handle_event(
                 ClientMessage::ZoneTransfer { target } => {
                     sim.world.resource_mut::<InputQueue>().zone_transfers.push(
                         ZoneTransferRequest { entity_id, target },
+                    );
+                }
+                ClientMessage::Fire { direction } => {
+                    sim.world.resource_mut::<InputQueue>().fires.push(
+                        FireRequest { entity_id, direction },
+                    );
+                }
+                ClientMessage::Respawn => {
+                    sim.world.resource_mut::<InputQueue>().respawns.push(
+                        RespawnRequest { entity_id },
                     );
                 }
                 ClientMessage::Ping { timestamp } => {
@@ -231,6 +248,63 @@ fn send_zone_changes(sim: &mut Simulation, connections: &ConnectionManager) {
                     let _ = conn.outbound_tx.send(bytes);
                     break;
                 }
+            }
+        }
+    }
+}
+/// Send combat-related events to clients.
+fn send_combat_events(sim: &mut Simulation, connections: &ConnectionManager) {
+    let combat_events = sim.world.resource::<lithos_world::resources::CombatEvents>();
+
+    // Spawn Projectiles
+    for event in &combat_events.spawn_projectiles {
+        let msg = ServerMessage::SpawnProjectile {
+            entity_id: event.entity_id,
+            position: event.position,
+            velocity: event.velocity,
+        };
+        if let Ok(bytes) = codec::encode(&msg) {
+            for conn in connections.iter() {
+                let _ = conn.outbound_tx.send(bytes.clone());
+            }
+        }
+    }
+
+    // Health Changes
+    for event in &combat_events.health_changes {
+        let msg = ServerMessage::HealthChanged {
+            entity_id: event.entity_id,
+            health: event.health,
+            max_health: event.max_health,
+        };
+        if let Ok(bytes) = codec::encode(&msg) {
+            for conn in connections.iter() {
+                let _ = conn.outbound_tx.send(bytes.clone());
+            }
+        }
+    }
+
+    // Deaths
+    for event in &combat_events.deaths {
+        let msg = ServerMessage::PlayerDied {
+            entity_id: event.entity_id,
+        };
+        if let Ok(bytes) = codec::encode(&msg) {
+            for conn in connections.iter() {
+                let _ = conn.outbound_tx.send(bytes.clone());
+            }
+        }
+    }
+
+    // Inventory Updates
+    for event in &combat_events.inventory_updates {
+        let msg = ServerMessage::InventoryUpdated {
+            entity_id: event.entity_id,
+            items_json: event.items_json.clone(),
+        };
+        if let Ok(bytes) = codec::encode(&msg) {
+            for conn in connections.iter() {
+                let _ = conn.outbound_tx.send(bytes.clone());
             }
         }
     }

@@ -20,3 +20,50 @@ pub struct Player {
 /// Which zone an entity currently belongs to.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Zone(pub ZoneId);
+
+/// Health of an entity.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Health {
+    pub current: f32,
+    pub max: f32,
+}
+
+/// A weapon equipped by an entity.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Weapon {
+    pub damage: f32,
+    pub projectile_speed: f32,
+    pub cooldown_seconds: f32,
+    pub last_fired_time: f64, // using standard seconds timestamp
+}
+
+/// Marks an entity as a projectile.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Projectile {
+    pub damage: f32,
+    pub owner: lithos_protocol::EntityId,
+    pub spawn_time: f64,
+    pub lifespan_seconds: f32,
+}
+
+/// An inventory holding items. Simple list of strings for now.
+#[derive(Component, Debug, Clone)]
+pub struct Inventory {
+    pub items: Vec<String>,
+}
+
+/// An item dropped in the world.
+#[derive(Component, Debug, Clone)]
+pub struct Item {
+    pub item_type: String,
+}
+
+/// A simple circle collider for hit detection.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Collider {
+    pub radius: f32,
+}
+
+/// Marks an entity as dead.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Dead;

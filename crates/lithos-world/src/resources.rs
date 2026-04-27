@@ -47,11 +47,26 @@ pub struct ZoneTransferRequest {
     pub target: ZoneId,
 }
 
+/// A pending fire request from a client.
+#[derive(Debug, Clone)]
+pub struct FireRequest {
+    pub entity_id: EntityId,
+    pub direction: Vec2,
+}
+
+/// A pending respawn request from a client.
+#[derive(Debug, Clone)]
+pub struct RespawnRequest {
+    pub entity_id: EntityId,
+}
+
 /// Queue of client inputs to be processed this tick.
 #[derive(Resource, Debug, Default)]
 pub struct InputQueue {
     pub moves: Vec<MoveInput>,
     pub zone_transfers: Vec<ZoneTransferRequest>,
+    pub fires: Vec<FireRequest>,
+    pub respawns: Vec<RespawnRequest>,
 }
 
 /// Tracks the last processed input sequence per entity (for client reconciliation).
@@ -106,4 +121,38 @@ pub struct ZoneChangeEvent {
 #[derive(Resource, Debug, Default)]
 pub struct ZoneChangeEvents {
     pub events: Vec<ZoneChangeEvent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpawnProjectileEvent {
+    pub entity_id: EntityId,
+    pub position: Vec2,
+    pub velocity: Vec2,
+}
+
+#[derive(Debug, Clone)]
+pub struct HealthChangedEvent {
+    pub entity_id: EntityId,
+    pub health: f32,
+    pub max_health: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerDiedEvent {
+    pub entity_id: EntityId,
+}
+
+#[derive(Debug, Clone)]
+pub struct InventoryUpdatedEvent {
+    pub entity_id: EntityId,
+    pub items_json: String,
+}
+
+/// Combat-related events emitted this tick.
+#[derive(Resource, Debug, Default)]
+pub struct CombatEvents {
+    pub spawn_projectiles: Vec<SpawnProjectileEvent>,
+    pub health_changes: Vec<HealthChangedEvent>,
+    pub deaths: Vec<PlayerDiedEvent>,
+    pub inventory_updates: Vec<InventoryUpdatedEvent>,
 }

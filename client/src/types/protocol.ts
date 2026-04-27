@@ -25,6 +25,8 @@ export type ClientMessage =
 	| { Join: { token: string } }
 	| { Move: { direction: Vec2; seq: number } }
 	| { ZoneTransfer: { target: ZoneId } }
+	| { Fire: { direction: Vec2 } }
+	| "Respawn"
 	| { Ping: { timestamp: number } };
 
 // ── Server → Client ──────────────────────────────────────────────────
@@ -39,5 +41,9 @@ export type ServerMessage =
 			};
 	  }
 	| { ZoneChanged: { zone: ZoneId } }
+	| { HealthChanged: { entity_id: number; health: number; max_health: number } }
+	| { PlayerDied: { entity_id: number } }
+	| { InventoryUpdated: { entity_id: number; items_json: string } }
+	| { SpawnProjectile: { entity_id: number; position: Vec2; velocity: Vec2 } }
 	| { Pong: { client_timestamp: number; server_timestamp: number } }
 	| { Disconnect: { reason: string } };

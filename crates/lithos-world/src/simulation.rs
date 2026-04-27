@@ -28,15 +28,21 @@ impl Simulation {
         world.insert_resource(LastProcessedSeq::default());
         world.insert_resource(EntityRegistry::default());
         world.insert_resource(ZoneChangeEvents::default());
+        world.insert_resource(CombatEvents::default());
 
         // Build the per-tick schedule.
         let mut schedule = Schedule::default();
         schedule.add_systems((
             systems::tick_counter_system,
             systems::process_inputs_system,
+            systems::combat_system,
+            systems::respawn_system,
             systems::movement_system,
             systems::bounds_system,
+            systems::hit_detection_system,
+            systems::projectile_expiration_system,
             systems::zone_transfer_system,
+            systems::item_pickup_system,
         ).chain());
 
         Self { world, schedule }

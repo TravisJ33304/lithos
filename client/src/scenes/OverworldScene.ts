@@ -31,6 +31,11 @@ export class OverworldScene extends Phaser.Scene {
 	private net!: NetworkClient;
 	private myEntityId!: number;
 	private entities: Map<number, RenderedEntity> = new Map();
+	private projectileIds: Set<number> = new Set();
+	private healthText!: Phaser.GameObjects.Text;
+	private currentHealth: number = 100;
+	private maxHealth: number = 100;
+	private isDead: boolean = false;
 	private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
 	private wasd!: {
 		W: Phaser.Input.Keyboard.Key;
@@ -120,13 +125,40 @@ export class OverworldScene extends Phaser.Scene {
 
 		// Zone transfer instruction.
 		this.add
-			.text(10, 46, "[SPACE] Warp to Asteroid Base", {
+			.text(10, 46, "[SPACE] Warp to Asteroid Base | [CLICK] Shoot", {
 				fontSize: "12px",
 				color: "#666666",
 				fontFamily: "monospace",
 			})
 			.setScrollFactor(0)
 			.setDepth(100);
+
+		this.healthText = this.add
+			.text(10, 64, "Health: 100/100", {
+				fontSize: "16px",
+				color: "#ff3333",
+				fontFamily: "monospace",
+				fontStyle: "bold",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
+
+		// --- Input processing ---
+		this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+			if (this.isDead) return;
+			// Convert screen coordinates to world coordinates
+			const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+			const myEntity = this.entities.get(this.myEntityId);
+			if (myEntity) {
+				const dx = worldPoint.x - myEntity.sprite.x;
+				const dy = worldPoint.y - myEntity.sprite.y;
+				this.net.send({
+					Fire: {
+						direction: { x: dx, y: dy },
+					},
+				});
+			}
+		});
 
 		// --- Network listener ---
 		this.net.onMessage((msg: ServerMessage) => {
@@ -139,11 +171,44 @@ export class OverworldScene extends Phaser.Scene {
 						entityId: this.myEntityId,
 					});
 				}
+			} else if ("SpawnProjectile" in msg) {
+				this.projectileIds.add(msg.SpawnProjectile.entity_id);
+			} else if ("HealthChanged" in msg) {
+				if (msg.HealthChanged.entity_id === this.myEntityId) {
+					this.currentHealth = msg.HealthChanged.health;
+					this.maxHealth = msg.HealthChanged.max_health;
+					this.healthText.setText(
+						`Health: ${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`
+					);
+				}
+			} else if ("PlayerDied" in msg) {
+				if (msg.PlayerDied.entity_id === this.myEntityId) {
+					this.isDead = true;
+					this.healthText.setText("DEAD - Press R to Respawn");
+					this.healthText.setColor("#ff0000");
+				}
+				// Remove the dead entity sprite
+				const deadEnt = this.entities.get(msg.PlayerDied.entity_id);
+				if (deadEnt) {
+					deadEnt.sprite.destroy();
+					deadEnt.label.destroy();
+					this.entities.delete(msg.PlayerDied.entity_id);
+				}
 			}
 		});
 	}
 
 	update(_time: number, _delta: number): void {
+		if (this.isDead) {
+			// Handle respawn
+			if (this.input.keyboard && Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R))) {
+				this.net.send("Respawn");
+				this.isDead = false;
+				this.healthText.setColor("#ff3333");
+			}
+			return; // don't process movement if dead
+		}
+
 		// --- Input processing ---
 		let dx = 0;
 		let dy = 0;
@@ -227,12 +292,23 @@ export class OverworldScene extends Phaser.Scene {
 
 	private spawnEntity(entity: EntitySnapshot): void {
 		const isMe = entity.id === this.myEntityId;
+		const isProjectile = this.projectileIds.has(entity.id);
+
+		let radius = 12;
+		let color = 0x8b949e;
+		if (isMe) {
+			radius = 14;
+			color = 0x58a6ff;
+		} else if (isProjectile) {
+			radius = 5;
+			color = 0xffa500; // Orange
+		}
 
 		const sprite = this.add.circle(
 			entity.position.x,
 			entity.position.y,
-			isMe ? 14 : 12,
-			isMe ? 0x58a6ff : 0x8b949e,
+			radius,
+			color,
 		);
 		sprite.setDepth(10);
 
@@ -240,7 +316,7 @@ export class OverworldScene extends Phaser.Scene {
 			.text(
 				entity.position.x,
 				entity.position.y - 20,
-				isMe ? "YOU" : `E${entity.id}`,
+				isProjectile ? "" : isMe ? "YOU" : `E${entity.id}`,
 				{
 					fontSize: "10px",
 					color: isMe ? "#58a6ff" : "#8b949e",

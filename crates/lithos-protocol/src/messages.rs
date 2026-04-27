@@ -31,6 +31,15 @@ pub enum ClientMessage {
         target: ZoneId,
     },
 
+    /// Request to fire equipped weapon in a specific direction.
+    Fire {
+        /// The target direction vector.
+        direction: Vec2,
+    },
+
+    /// Request to respawn after dying.
+    Respawn,
+
     /// Periodic heartbeat / keep-alive.
     Ping {
         /// Client timestamp (ms since epoch).
@@ -65,6 +74,32 @@ pub enum ServerMessage {
     /// Notification that the player has been transferred to a new zone.
     ZoneChanged {
         zone: ZoneId,
+    },
+
+    /// Notification that an entity's health changed.
+    HealthChanged {
+        entity_id: EntityId,
+        health: f32,
+        max_health: f32,
+    },
+
+    /// Notification that a player has died.
+    PlayerDied {
+        entity_id: EntityId,
+    },
+
+    /// Notification that a player's inventory was updated.
+    InventoryUpdated {
+        entity_id: EntityId,
+        // Using a generic string for now to represent serialized inventory data
+        items_json: String, 
+    },
+
+    /// Notification that a projectile was spawned. Useful for client-side VFX.
+    SpawnProjectile {
+        entity_id: EntityId,
+        position: Vec2,
+        velocity: Vec2,
     },
 
     /// Response to a client ping.
