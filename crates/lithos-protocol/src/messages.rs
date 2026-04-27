@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{EntityId, EntitySnapshot, PlayerId, Vec2, ZoneId};
+use crate::types::{
+    ChatChannel, DynamicEventSnapshot, EntityId, EntitySnapshot, PlayerId,
+    ProgressionSnapshot, RaidStateSnapshot, TraderQuote, Vec2, ZoneId,
+};
 
 // ---------------------------------------------------------------------------
 // Client → Server
@@ -35,6 +38,10 @@ pub enum ClientMessage {
     Fire {
         /// The target direction vector.
         direction: Vec2,
+        /// Client-measured round trip latency in milliseconds.
+        ///
+        /// The server uses this hint to rewind state for hit registration.
+        client_latency_ms: u16,
     },
 
     /// Request to respawn after dying.
@@ -60,6 +67,22 @@ pub enum ClientMessage {
     Ping {
         /// Client timestamp (ms since epoch).
         timestamp: u64,
+    },
+
+    /// Send a chat message.
+    Chat {
+        /// Channel scope.
+        channel: ChatChannel,
+        /// Message body.
+        text: String,
+    },
+
+    /// Ask the server for the current trader quotes.
+    RequestTraderQuotes,
+
+    /// Attempt to initiate a raid against a defender faction.
+    InitiateRaid {
+        defender_faction_id: u64,
     },
 }
 
@@ -117,6 +140,57 @@ pub enum ServerMessage {
         entity_id: EntityId,
         position: Vec2,
         velocity: Vec2,
+    },
+
+    /// Broadcast chat line.
+    ChatMessage {
+        from_entity_id: EntityId,
+        channel: ChatChannel,
+        text: String,
+        sent_at_unix_ms: u64,
+    },
+
+    /// Credits / faction vault update.
+    CreditsChanged {
+        faction_id: u64,
+        balance: i64,
+    },
+
+    /// Updated NPC trader market quotes.
+    TraderQuotes {
+        quotes: Vec<TraderQuote>,
+    },
+
+    /// Updated progression stats for a player.
+    ProgressionUpdated {
+        entity_id: EntityId,
+        branches: Vec<ProgressionSnapshot>,
+    },
+
+    /// A dynamic world event started.
+    DynamicEventStarted {
+        event: DynamicEventSnapshot,
+    },
+
+    /// A dynamic world event ended.
+    DynamicEventEnded {
+        event_id: u64,
+    },
+
+    /// Defender warning for an incoming breach.
+    RaidWarning {
+        raid: RaidStateSnapshot,
+    },
+
+    /// Breach became active.
+    RaidStarted {
+        raid: RaidStateSnapshot,
+    },
+
+    /// Breach ended.
+    RaidEnded {
+        raid: RaidStateSnapshot,
+        attacker_won: bool,
     },
 
     /// Response to a client ping.

@@ -137,6 +137,7 @@ mod tests {
     fn roundtrip_client_fire() {
         let msg = ClientMessage::Fire {
             direction: Vec2::new(0.5, 0.5),
+            client_latency_ms: 45,
         };
         let bytes = encode(&msg).unwrap();
         let decoded: ClientMessage = decode(&bytes).unwrap();
@@ -190,6 +191,30 @@ mod tests {
             entity_id: EntityId(7),
             position: Vec2::new(10.0, 10.0),
             velocity: Vec2::new(2.0, 0.0),
+        };
+        let bytes = encode(&msg).unwrap();
+        let decoded: ServerMessage = decode(&bytes).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn roundtrip_client_chat() {
+        let msg = ClientMessage::Chat {
+            channel: ChatChannel::Global,
+            text: "hello station".to_string(),
+        };
+        let bytes = encode(&msg).unwrap();
+        let decoded: ClientMessage = decode(&bytes).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn roundtrip_server_chat_message() {
+        let msg = ServerMessage::ChatMessage {
+            from_entity_id: EntityId(8),
+            channel: ChatChannel::Faction,
+            text: "brace for breach".to_string(),
+            sent_at_unix_ms: 1_700_000_010_000,
         };
         let bytes = encode(&msg).unwrap();
         let decoded: ServerMessage = decode(&bytes).unwrap();

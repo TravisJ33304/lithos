@@ -7,6 +7,7 @@
 import * as Phaser from "phaser";
 import { AsteroidBaseScene } from "./scenes/AsteroidBaseScene";
 import { BootScene } from "./scenes/BootScene";
+import { LoginScene } from "./scenes/LoginScene";
 import { OverworldScene } from "./scenes/OverworldScene";
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -15,6 +16,9 @@ const config: Phaser.Types.Core.GameConfig = {
 	height: 720,
 	parent: "game-container",
 	backgroundColor: "#0a0a1a",
+	dom: {
+		createContainer: true,
+	},
 	physics: {
 		default: "arcade",
 		arcade: {
@@ -22,7 +26,7 @@ const config: Phaser.Types.Core.GameConfig = {
 			debug: false,
 		},
 	},
-	scene: [BootScene, OverworldScene, AsteroidBaseScene],
+	scene: [BootScene, LoginScene, OverworldScene, AsteroidBaseScene],
 	scale: {
 		mode: Phaser.Scale.FIT,
 		autoCenter: Phaser.Scale.CENTER_BOTH,

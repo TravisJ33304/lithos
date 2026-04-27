@@ -246,6 +246,7 @@ export class OverworldScene extends Phaser.Scene {
 				this.net.send({
 					Fire: {
 						direction: { x: dx, y: dy },
+						client_latency_ms: this.net.getEstimatedRttMs(),
 					},
 				});
 			}

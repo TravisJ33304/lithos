@@ -8,6 +8,7 @@
 
 pub mod components;
 pub mod crafting;
+pub mod economy;
 pub mod resources;
 pub mod simulation;
 pub mod systems;

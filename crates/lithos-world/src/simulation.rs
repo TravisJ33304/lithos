@@ -29,6 +29,14 @@ impl Simulation {
         world.insert_resource(EntityRegistry::default());
         world.insert_resource(ZoneChangeEvents::default());
         world.insert_resource(CombatEvents::default());
+        world.insert_resource(ChatEvents::default());
+        world.insert_resource(ActiveDynamicEvents::default());
+        world.insert_resource(DynamicEventBus::default());
+        world.insert_resource(RaidStateStore::default());
+        world.insert_resource(RaidEventBus::default());
+        world.insert_resource(ProgressionQueue::default());
+        world.insert_resource(TraderMarket::default());
+        world.insert_resource(FactionVaults::default());
 
         // Build the per-tick schedule.
         let mut schedule = Schedule::default();
@@ -37,6 +45,7 @@ impl Simulation {
             systems::process_inputs_system,
             systems::combat_system,
             systems::respawn_system,
+            systems::position_history_system,
             systems::movement_system,
             systems::bounds_system,
             systems::power_grid_system,
@@ -46,6 +55,10 @@ impl Simulation {
             systems::zone_transfer_system,
             systems::item_pickup_system,
             systems::npc_ai_system,
+            systems::trader_market_system,
+            systems::progression_system,
+            systems::dynamic_events_system,
+            systems::raid_state_system,
         ).chain());
 
         Self { world, schedule }

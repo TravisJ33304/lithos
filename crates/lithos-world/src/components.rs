@@ -1,7 +1,7 @@
 //! ECS components for the Lithos game world.
 
 use bevy_ecs::prelude::*;
-use lithos_protocol::{PlayerId, Vec2, ZoneId};
+use lithos_protocol::{PlayerId, SkillBranch, Vec2, ZoneId};
 
 /// The position of an entity in the game world.
 #[derive(Component, Debug, Clone, Copy)]
@@ -12,9 +12,13 @@ pub struct Position(pub Vec2);
 pub struct Velocity(pub Vec2);
 
 /// Marks an entity as a player and stores their ID.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone)]
 pub struct Player {
     pub id: PlayerId,
+    /// Optional auth subject from Supabase JWT `sub` claim.
+    pub auth_subject: Option<String>,
+    /// Optional faction affiliation for faction chat + raids.
+    pub faction_id: Option<u64>,
 }
 
 /// Which zone an entity currently belongs to.
@@ -44,6 +48,7 @@ pub struct Projectile {
     pub owner: lithos_protocol::EntityId,
     pub spawn_time: f64,
     pub lifespan_seconds: f32,
+    pub rewind_ticks: u32,
 }
 
 /// An inventory holding items. Simple list of strings for now.
@@ -147,4 +152,61 @@ pub struct LifeSupport {
 pub struct Oxygen {
     pub current: f32,
     pub max: f32,
+}
+
+/// Recent historical positions for lag compensation rewind.
+#[derive(Component, Debug, Clone)]
+pub struct PositionHistory {
+    pub samples: std::collections::VecDeque<(u64, Vec2)>,
+}
+
+impl Default for PositionHistory {
+    fn default() -> Self {
+        Self {
+            samples: std::collections::VecDeque::with_capacity(64),
+        }
+    }
+}
+
+/// Character progression state.
+#[derive(Component, Debug, Clone)]
+pub struct Progression {
+    pub branches: std::collections::HashMap<SkillBranch, ProgressionBranchState>,
+}
+
+impl Default for Progression {
+    fn default() -> Self {
+        let mut branches = std::collections::HashMap::new();
+        for branch in [
+            SkillBranch::Fabrication,
+            SkillBranch::Extraction,
+            SkillBranch::Ballistics,
+            SkillBranch::Cybernetics,
+        ] {
+            branches.insert(
+                branch,
+                ProgressionBranchState {
+                    level: 1,
+                    xp: 0,
+                    xp_to_next: 100,
+                },
+            );
+        }
+        Self { branches }
+    }
+}
+
+/// Per-branch progression values.
+#[derive(Debug, Clone, Copy)]
+pub struct ProgressionBranchState {
+    pub level: u32,
+    pub xp: u32,
+    pub xp_to_next: u32,
+}
+
+/// Faction vault balance.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct FactionVault {
+    pub faction_id: u64,
+    pub credits: i64,
 }

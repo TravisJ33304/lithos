@@ -4,7 +4,6 @@
 
 import * as Phaser from "phaser";
 import { NetworkClient } from "../net/NetworkClient";
-import type { ServerMessage } from "../types/protocol";
 
 // Server WebSocket URL (configurable via env or fallback to localhost).
 const WS_URL = "ws://localhost:9001";
@@ -46,31 +45,12 @@ export class BootScene extends Phaser.Scene {
 
 		this.net = new NetworkClient();
 
-		this.net.onMessage((msg: ServerMessage) => {
-			if ("JoinAck" in msg) {
-				status.setText("Joined! Entering Overworld...");
-				// Small delay so the player sees the status update.
-				this.time.delayedCall(500, () => {
-					this.scene.start("OverworldScene", {
-						net: this.net,
-						playerId: msg.JoinAck.player_id,
-						entityId: msg.JoinAck.entity_id,
-						zone: msg.JoinAck.zone,
-						worldSeed: msg.JoinAck.world_seed,
-					});
-				});
-			}
+		// For MVP, proceed directly to login with network client configured.
+		this.net.setEndpoint(WS_URL);
+		status.setText(`Server: ${WS_URL}`);
+		
+		this.time.delayedCall(500, () => {
+			this.scene.start("LoginScene", { net: this.net });
 		});
-
-		this.net
-			.connect(WS_URL)
-			.then(() => {
-				status.setText("Connected! Joining...");
-				this.net.send({ Join: { token: "dev-token" } });
-			})
-			.catch(() => {
-				status.setText("Failed to connect. Is the server running?");
-				status.setColor("#ff4444");
-			});
 	}
 }

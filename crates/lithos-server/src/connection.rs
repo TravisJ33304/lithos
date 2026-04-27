@@ -11,6 +11,7 @@ pub struct ClientConnection {
     #[allow(dead_code)]
     pub player_id: PlayerId,
     pub entity_id: EntityId,
+    pub faction_id: Option<u64>,
     /// The player's username (used for DB persistence).
     pub username: String,
     /// Channel to send serialized messages back to this client's WebSocket task.
@@ -33,6 +34,7 @@ impl ConnectionManager {
         &mut self,
         player_id: PlayerId,
         entity_id: EntityId,
+        faction_id: Option<u64>,
         username: String,
         outbound_tx: mpsc::UnboundedSender<Vec<u8>>,
     ) {
@@ -41,6 +43,7 @@ impl ConnectionManager {
             ClientConnection {
                 player_id,
                 entity_id,
+                faction_id,
                 username,
                 outbound_tx,
             },
@@ -70,5 +73,10 @@ impl ConnectionManager {
     /// Get the number of connected clients.
     pub fn count(&self) -> usize {
         self.clients.len()
+    }
+
+    /// Get a single connection by entity ID.
+    pub fn get(&self, entity_id: EntityId) -> Option<&ClientConnection> {
+        self.clients.get(&entity_id)
     }
 }

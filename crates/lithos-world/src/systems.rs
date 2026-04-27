@@ -2,8 +2,17 @@
 
 use bevy_ecs::prelude::*;
 
-use crate::components::{Position, Velocity, Zone, Health, Weapon, Projectile, Collider, Dead, Player, Inventory, Item, Npc, NpcState, NpcType};
-use crate::resources::{InputQueue, LastProcessedSeq, SimConfig, TickCounter, EntityRegistry, ZoneChangeEvent, ZoneChangeEvents, CombatEvents, SpawnProjectileEvent, HealthChangedEvent, PlayerDiedEvent, InventoryUpdatedEvent};
+use crate::components::{
+    Collider, Dead, Health, Inventory, Item, Npc, NpcState, NpcType, Player, Position,
+    PositionHistory, Progression, Projectile, Velocity, Weapon, Zone,
+};
+use crate::resources::{
+    ActiveDynamicEvents, CombatEvents, DynamicEventBus, EntityRegistry,
+    FactionVaults, HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq,
+    PlayerDiedEvent, ProgressionQueue, ProgressionUpdatedEvent, RaidEventBus, RaidStateStore,
+    SimConfig, SpawnProjectileEvent, TickCounter, TraderMarket, ZoneChangeEvent,
+    ZoneChangeEvents,
+};
 
 /// Advance the tick counter.
 pub fn tick_counter_system(mut counter: ResMut<TickCounter>) {
@@ -26,6 +35,20 @@ pub fn process_inputs_system(
             let dir = input.direction.normalize();
             vel.0 = dir * config.max_speed;
             last_seq.map.insert(input.entity_id, input.seq);
+        }
+    }
+}
+
+/// Capture per-tick position history for lag compensation rewind.
+pub fn position_history_system(
+    tick: Res<TickCounter>,
+    config: Res<SimConfig>,
+    mut query: Query<(&Position, &mut PositionHistory), Without<Dead>>,
+) {
+    for (pos, mut history) in query.iter_mut() {
+        history.samples.push_back((tick.tick, pos.0));
+        while history.samples.len() as u64 > config.lag_comp_history_ticks {
+            let _ = history.samples.pop_front();
         }
     }
 }
@@ -113,6 +136,10 @@ pub fn combat_system(
                     let proj_pos = pos.0 + dir * 20.0;
                     
                     let new_id = registry.next_entity_id();
+                    let rewind_ticks = ((req.client_latency_ms as f32 / 1000.0) / config.dt)
+                        .round()
+                        .clamp(0.0, config.lag_comp_history_ticks as f32)
+                        as u32;
                     let new_ecs_entity = commands.spawn((
                         Position(proj_pos),
                         Velocity(proj_vel),
@@ -122,6 +149,7 @@ pub fn combat_system(
                             owner: req.entity_id,
                             spawn_time: current_time,
                             lifespan_seconds: 2.0,
+                            rewind_ticks,
                         },
                         Collider { radius: 5.0 },
                     )).id();
@@ -164,21 +192,61 @@ pub fn hit_detection_system(
     mut registry: ResMut<EntityRegistry>,
     mut combat_events: ResMut<CombatEvents>,
     projectiles: Query<(Entity, &Projectile, &Position, &Collider, &Zone)>,
-    mut targets: Query<(Entity, &mut Health, &Position, &Collider, &Zone, &mut Inventory), Without<Dead>>,
+    mut targets: Query<
+        (
+            Entity,
+            &mut Health,
+            &Position,
+            Option<&PositionHistory>,
+            &Collider,
+            &Zone,
+            &mut Inventory,
+            Option<&Player>,
+        ),
+        Without<Dead>,
+    >,
+    tick: Res<TickCounter>,
+    mut vaults: ResMut<FactionVaults>,
 ) {
     combat_events.health_changes.clear();
     combat_events.deaths.clear();
     combat_events.inventory_updates.clear();
+    combat_events.credits_changes.clear();
 
     for (proj_ent, proj, proj_pos, proj_col, proj_zone) in projectiles.iter() {
         let mut hit = false;
+        let rewind_tick = tick.tick.saturating_sub(proj.rewind_ticks as u64);
         
-        for (target_ent, mut target_health, target_pos, target_col, target_zone, mut target_inv) in targets.iter_mut() {
+        for (
+            target_ent,
+            mut target_health,
+            target_pos,
+            target_history,
+            target_col,
+            target_zone,
+            mut target_inv,
+            target_player,
+        ) in targets.iter_mut()
+        {
             if proj_zone.0 != target_zone.0 { continue; }
             if let Some(&target_id) = registry.by_entity.get(&target_ent) {
                 if target_id == proj.owner { continue; }
+
+                let rewound_pos = if proj.rewind_ticks == 0 {
+                    target_pos.0
+                } else if let Some(history) = target_history {
+                    history
+                        .samples
+                        .iter()
+                        .rev()
+                        .find(|(sample_tick, _)| *sample_tick <= rewind_tick)
+                        .map(|(_, p)| *p)
+                        .unwrap_or(target_pos.0)
+                } else {
+                    target_pos.0
+                };
                 
-                let dist_sq = (proj_pos.0 - target_pos.0).length_squared();
+                let dist_sq = (proj_pos.0 - rewound_pos).length_squared();
                 let combined_radius = proj_col.radius + target_col.radius;
                 
                 if dist_sq <= combined_radius * combined_radius {
@@ -197,11 +265,24 @@ pub fn hit_detection_system(
                         combat_events.deaths.push(PlayerDiedEvent {
                             entity_id: target_id,
                         });
+
+                        if let Some(player) = target_player
+                            && let Some(faction_id) = player.faction_id
+                        {
+                            let bal = vaults.balances.entry(faction_id).or_insert(0);
+                            *bal = (*bal).saturating_sub(25);
+                            combat_events.credits_changes.push(
+                                crate::resources::CreditsChangedEvent {
+                                    faction_id,
+                                    balance: *bal,
+                                },
+                            );
+                        }
                         
                         // Drop all inventory items
                         let mut offset = 0.0;
                         for item in target_inv.items.drain(..) {
-                            let drop_pos = target_pos.0 + lithos_protocol::Vec2::new(offset, offset);
+                            let drop_pos = rewound_pos + lithos_protocol::Vec2::new(offset, offset);
                             offset += 10.0; // simple spread
                             
                             let item_id = registry.next_entity_id();
@@ -425,6 +506,185 @@ pub fn npc_ai_system(
     }
 }
 
+/// Simulate NPC trader supply/demand and refresh quotes over time.
+pub fn trader_market_system(
+    mut market: ResMut<TraderMarket>,
+    tick: Res<TickCounter>,
+    registry: Res<EntityRegistry>,
+    traders: Query<(Entity, &Npc), Without<Dead>>,
+) {
+    if market.quotes.is_empty() {
+        for (entity, npc) in traders.iter() {
+            if npc.npc_type != NpcType::Trader {
+                continue;
+            }
+
+            let Some(&trader_entity_id) = registry.by_entity.get(&entity) else {
+                continue;
+            };
+
+            for (item, base_price) in [
+                ("iron", 10.0_f32),
+                ("titanium", 22.0_f32),
+                ("lithos", 80.0_f32),
+                ("medkit", 45.0_f32),
+            ] {
+                market.quotes.push(crate::economy::TraderMarketState {
+                    trader_entity_id,
+                    item: item.to_string(),
+                    base_price,
+                    demand_scalar: 1.0,
+                    available_credits: 2_500,
+                });
+            }
+        }
+    }
+
+    if !tick.tick.is_multiple_of(400) {
+        return;
+    }
+
+    for quote in &mut market.quotes {
+        let cycle = ((tick.tick / 400) + quote.trader_entity_id.0) % 7;
+        let sold_to_trader = cycle as i32;
+        let bought_from_trader = (6 - cycle) as i32;
+        quote.apply_daily_volume(sold_to_trader, bought_from_trader);
+        quote.available_credits =
+            (quote.available_credits + i64::from(bought_from_trader * 20 - sold_to_trader * 10))
+                .clamp(500, 10_000);
+    }
+}
+
+fn xp_to_next_level(level: u32) -> u32 {
+    100 + (level.saturating_sub(1) * 50)
+}
+
+/// Apply queued XP gains and emit progression updates for clients.
+pub fn progression_system(
+    mut queue: ResMut<ProgressionQueue>,
+    mut combat_events: ResMut<CombatEvents>,
+    registry: Res<EntityRegistry>,
+    mut players: Query<&mut Progression, Without<Dead>>,
+) {
+    combat_events.progression_updates.clear();
+
+    for gain in queue.gains.drain(..) {
+        let Some(&ecs_entity) = registry.by_id.get(&gain.entity_id) else {
+            continue;
+        };
+        let Ok(mut progression) = players.get_mut(ecs_entity) else {
+            continue;
+        };
+        let Some(branch) = progression.branches.get_mut(&gain.branch) else {
+            continue;
+        };
+
+        branch.xp = branch.xp.saturating_add(gain.amount);
+        while branch.xp >= branch.xp_to_next {
+            branch.xp -= branch.xp_to_next;
+            branch.level = branch.level.saturating_add(1);
+            branch.xp_to_next = xp_to_next_level(branch.level);
+        }
+
+        let mut branches = Vec::new();
+        for (skill, state) in &progression.branches {
+            branches.push(lithos_protocol::ProgressionSnapshot {
+                branch: *skill,
+                level: state.level,
+                xp: state.xp,
+                xp_to_next: state.xp_to_next,
+            });
+        }
+
+        combat_events
+            .progression_updates
+            .push(ProgressionUpdatedEvent {
+                entity_id: gain.entity_id,
+                branches,
+            });
+    }
+}
+
+/// Drive dynamic world event lifecycle (meteor showers, solar flares, POIs).
+pub fn dynamic_events_system(
+    mut active: ResMut<ActiveDynamicEvents>,
+    mut bus: ResMut<DynamicEventBus>,
+    tick: Res<TickCounter>,
+) {
+    bus.started.clear();
+    bus.ended_event_ids.clear();
+
+    if active.next_id == 0 {
+        active.next_id = 1;
+    }
+
+    if tick.tick.is_multiple_of(900) {
+        let kind_index = (tick.tick / 900) % 3;
+        let kind = match kind_index {
+            0 => lithos_protocol::DynamicEventKind::MeteorShower,
+            1 => lithos_protocol::DynamicEventKind::SolarFlare,
+            _ => lithos_protocol::DynamicEventKind::CrashedFreighter,
+        };
+        let description = match kind {
+            lithos_protocol::DynamicEventKind::MeteorShower => {
+                "Meteor shower detected in the Mid-Zone".to_string()
+            }
+            lithos_protocol::DynamicEventKind::SolarFlare => {
+                "Solar flare causing sensor disruption".to_string()
+            }
+            lithos_protocol::DynamicEventKind::CrashedFreighter => {
+                "Crashed freighter beacon spotted in the Core".to_string()
+            }
+        };
+        let event = crate::resources::DynamicEventState {
+            event_id: active.next_id,
+            kind,
+            started_at_tick: tick.tick,
+            expires_at_tick: tick.tick + 300,
+            description,
+        };
+        active.next_id += 1;
+        active.active.push(event.clone());
+        bus.started.push(event);
+    }
+
+    let mut retained = Vec::with_capacity(active.active.len());
+    for event in active.active.drain(..) {
+        if tick.tick >= event.expires_at_tick {
+            bus.ended_event_ids.push(event.event_id);
+        } else {
+            retained.push(event);
+        }
+    }
+    active.active = retained;
+}
+
+/// Advance raid warnings into active breaches and close finished raids.
+pub fn raid_state_system(
+    mut raids: ResMut<RaidStateStore>,
+    mut bus: ResMut<RaidEventBus>,
+    tick: Res<TickCounter>,
+) {
+    bus.warnings.clear();
+    bus.started.clear();
+    bus.ended.clear();
+
+    let mut retained = Vec::with_capacity(raids.raids.len());
+    for mut raid in raids.raids.drain(..) {
+        if !raid.breach_active && tick.tick >= raid.warning_ends_at_tick {
+            raid.breach_active = true;
+            bus.started.push(raid.clone());
+        }
+
+        if raid.breach_active && tick.tick >= raid.breach_ends_at_tick {
+            bus.ended.push((raid, false));
+        } else {
+            retained.push(raid);
+        }
+    }
+    raids.raids = retained;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,7 +709,13 @@ mod tests {
         let ecs_entity = world.spawn((
             Position(Vec2::ZERO),
             Velocity(Vec2::ZERO),
-            Player { id: PlayerId::new() },
+            PositionHistory::default(),
+            Progression::default(),
+            Player {
+                id: PlayerId::new(),
+                auth_subject: None,
+                faction_id: None,
+            },
             Zone(ZoneId::Overworld),
         )).id();
 

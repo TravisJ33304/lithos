@@ -48,6 +48,11 @@ impl Vec2 {
         self.length_squared().sqrt()
     }
 
+    /// Dot product between two vectors.
+    pub fn dot(self, rhs: Self) -> f32 {
+        self.x * rhs.x + self.y * rhs.y
+    }
+
     /// Returns the unit vector, or `ZERO` if the length is near zero.
     pub fn normalize(self) -> Self {
         let len = self.length();
@@ -128,6 +133,98 @@ pub enum SnapshotEntityType {
     Item,
     Projectile,
     Unknown,
+}
+
+/// Chat channel scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChatChannel {
+    Global,
+    Faction,
+}
+
+/// Player progression branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SkillBranch {
+    Fabrication,
+    Extraction,
+    Ballistics,
+    Cybernetics,
+}
+
+/// Progression payload for one branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProgressionSnapshot {
+    pub branch: SkillBranch,
+    pub level: u32,
+    pub xp: u32,
+    pub xp_to_next: u32,
+}
+
+/// Dynamic event type broadcast by the server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DynamicEventKind {
+    MeteorShower,
+    SolarFlare,
+    CrashedFreighter,
+}
+
+/// Lightweight server-browser record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerListing {
+    pub server_id: String,
+    pub name: String,
+    pub websocket_url: String,
+    pub region: String,
+    pub population: u32,
+    pub capacity: u32,
+    pub healthy: bool,
+    pub last_heartbeat_unix_ms: u64,
+}
+
+/// Faction leaderboard row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaderboardEntry {
+    pub faction_id: u64,
+    pub faction_name: String,
+    pub wealth: i64,
+}
+
+/// Faction membership view for a player.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FactionMembership {
+    pub faction_id: u64,
+    pub faction_name: String,
+    pub role: String,
+}
+
+/// Dynamic event record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DynamicEventSnapshot {
+    pub event_id: u64,
+    pub kind: DynamicEventKind,
+    pub started_at_unix_ms: u64,
+    pub expires_at_unix_ms: u64,
+    pub description: String,
+}
+
+/// Raid state snapshot for UI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RaidStateSnapshot {
+    pub attacker_faction_id: u64,
+    pub defender_faction_id: u64,
+    pub warning_remaining_seconds: u32,
+    pub breach_active: bool,
+}
+
+/// Trader market quote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TraderQuote {
+    pub trader_entity_id: EntityId,
+    pub item: String,
+    pub buy_price: f32,
+    pub sell_price: f32,
+    pub demand_scalar: f32,
+    pub available_credits: i64,
 }
 
 /// Snapshot of a single entity's state, sent from server to clients.
