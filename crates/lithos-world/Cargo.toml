@@ -12,3 +12,4 @@ uuid = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 lithos-protocol = { path = "../lithos-protocol" }
+noise = "0.9.0"

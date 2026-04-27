@@ -67,3 +67,18 @@ pub struct Collider {
 /// Marks an entity as dead.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Dead;
+
+/// AI state for an NPC.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NpcState {
+    Patrol,
+    Aggro,
+    Attack,
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct Npc {
+    pub state: NpcState,
+    pub target: Option<lithos_protocol::EntityId>,
+    pub spawn_pos: lithos_protocol::Vec2,
+}

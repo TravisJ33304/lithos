@@ -10,3 +10,4 @@ pub mod components;
 pub mod resources;
 pub mod simulation;
 pub mod systems;
+pub mod world_gen;

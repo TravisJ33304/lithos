@@ -18,3 +18,4 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 lithos-protocol = { path = "../lithos-protocol" }
 lithos-world = { path = "../lithos-world" }
+rand = "0.8.6"

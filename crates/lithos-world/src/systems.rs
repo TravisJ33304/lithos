@@ -2,7 +2,7 @@
 
 use bevy_ecs::prelude::*;
 
-use crate::components::{Position, Velocity, Zone, Health, Weapon, Projectile, Collider, Dead, Player, Inventory, Item};
+use crate::components::{Position, Velocity, Zone, Health, Weapon, Projectile, Collider, Dead, Player, Inventory, Item, Npc, NpcState};
 use crate::resources::{InputQueue, LastProcessedSeq, SimConfig, TickCounter, EntityRegistry, ZoneChangeEvent, ZoneChangeEvents, CombatEvents, SpawnProjectileEvent, HealthChangedEvent, PlayerDiedEvent, InventoryUpdatedEvent};
 
 /// Advance the tick counter.
@@ -289,6 +289,58 @@ pub fn item_pickup_system(
                     }
                     commands.entity(item_ent).despawn();
                 }
+            }
+        }
+    }
+}
+
+/// Basic Automata AI logic.
+#[allow(clippy::type_complexity)]
+pub fn npc_ai_system(
+    config: Res<SimConfig>,
+    mut npcs: Query<(&mut Npc, &mut Velocity, &Position), Without<Dead>>,
+    players: Query<&Position, (With<Player>, Without<Dead>)>,
+) {
+    let speed = config.max_speed * 0.5;
+
+    for (mut npc, mut vel, pos) in npcs.iter_mut() {
+        let mut nearest_dist_sq = f32::MAX;
+        let mut nearest_pos = None;
+
+        for player_pos in players.iter() {
+            let dist_sq = (pos.0 - player_pos.0).length_squared();
+            if dist_sq < nearest_dist_sq {
+                nearest_dist_sq = dist_sq;
+                nearest_pos = Some(player_pos.0);
+            }
+        }
+
+        if let Some(target) = nearest_pos {
+            if nearest_dist_sq < 1000.0 * 1000.0 {
+                // Aggro: chase player
+                npc.state = NpcState::Aggro;
+                let dir = (target - pos.0).normalize();
+                vel.0 = dir * speed;
+            } else {
+                // Patrol: return to spawn
+                npc.state = NpcState::Patrol;
+                let dist_to_spawn = (npc.spawn_pos - pos.0).length_squared();
+                if dist_to_spawn > 100.0 {
+                    let dir = (npc.spawn_pos - pos.0).normalize();
+                    vel.0 = dir * speed * 0.5;
+                } else {
+                    vel.0 = lithos_protocol::Vec2::ZERO;
+                }
+            }
+        } else {
+            // Patrol: return to spawn
+            npc.state = NpcState::Patrol;
+            let dist_to_spawn = (npc.spawn_pos - pos.0).length_squared();
+            if dist_to_spawn > 100.0 {
+                let dir = (npc.spawn_pos - pos.0).normalize();
+                vel.0 = dir * speed * 0.5;
+            } else {
+                vel.0 = lithos_protocol::Vec2::ZERO;
             }
         }
     }

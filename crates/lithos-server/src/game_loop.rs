@@ -47,6 +47,45 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
     let mut sim = Simulation::new();
     let mut connections = ConnectionManager::new();
 
+    // Spawn some initial NPCs
+    use lithos_world::world_gen::{WorldGenerator, Biome};
+    use lithos_world::components::{Npc, NpcState, Health, Weapon, Collider, Inventory};
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let generator = WorldGenerator::new(12345);
+    for _ in 0..100 {
+        let x = rng.gen_range(-4000.0..4000.0);
+        let y = rng.gen_range(-4000.0..4000.0);
+        let pos = Vec2::new(x, y);
+        let biome = generator.get_biome(pos);
+        
+        if biome != Biome::OuterRim {
+            let npc_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+            let health = if biome == Biome::Core { 300.0 } else { 100.0 };
+            
+            let ecs_ent = sim.world.spawn((
+                Position(pos),
+                Velocity(Vec2::ZERO),
+                Zone(ZoneId::Overworld),
+                Npc {
+                    state: NpcState::Patrol,
+                    target: None,
+                    spawn_pos: pos,
+                },
+                Health { current: health, max: health },
+                Weapon {
+                    damage: if biome == Biome::Core { 40.0 } else { 15.0 },
+                    projectile_speed: 400.0,
+                    cooldown_seconds: 1.0,
+                    last_fired_time: 0.0,
+                },
+                Collider { radius: 14.0 },
+                Inventory { items: vec!["scrap".to_string(), "circuit".to_string()] },
+            )).id();
+            sim.world.resource_mut::<EntityRegistry>().register(npc_id, ecs_ent);
+        }
+    }
+
     tracing::info!(tick_rate = config.tick_rate, "game loop starting");
 
     // ── Main game loop ───────────────────────────────────────────────

@@ -19,6 +19,7 @@ interface OverworldData {
 /** Runtime state for a rendered entity. */
 interface RenderedEntity {
 	sprite: Phaser.GameObjects.Arc;
+	facingLine?: Phaser.GameObjects.Graphics;
 	label: Phaser.GameObjects.Text;
 	targetX: number;
 	targetY: number;
@@ -33,6 +34,9 @@ export class OverworldScene extends Phaser.Scene {
 	private entities: Map<number, RenderedEntity> = new Map();
 	private projectileIds: Set<number> = new Set();
 	private healthText!: Phaser.GameObjects.Text;
+	private inventoryText!: Phaser.GameObjects.Text;
+	private crosshair!: Phaser.GameObjects.Graphics;
+	private inventoryItems: string[] = [];
 	private currentHealth: number = 100;
 	private maxHealth: number = 100;
 	private isDead: boolean = false;
@@ -133,6 +137,33 @@ export class OverworldScene extends Phaser.Scene {
 			.setScrollFactor(0)
 			.setDepth(100);
 
+		this.inventoryText = this.add
+			.text(this.cameras.main.width / 2, this.cameras.main.height - 30, "Inventory: []", {
+				fontSize: "14px",
+				color: "#ffffff",
+				backgroundColor: "#00000088",
+				padding: { x: 10, y: 5 },
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100)
+			.setOrigin(0.5);
+
+		// Crosshair
+		this.crosshair = this.add.graphics();
+		this.crosshair.lineStyle(2, 0xff0000, 0.8);
+		this.crosshair.strokeCircle(0, 0, 8);
+		this.crosshair.moveTo(-12, 0);
+		this.crosshair.lineTo(-4, 0);
+		this.crosshair.moveTo(12, 0);
+		this.crosshair.lineTo(4, 0);
+		this.crosshair.moveTo(0, -12);
+		this.crosshair.lineTo(0, -4);
+		this.crosshair.moveTo(0, 12);
+		this.crosshair.lineTo(0, 4);
+		this.crosshair.strokePath();
+		this.crosshair.setDepth(200);
+
 		this.healthText = this.add
 			.text(10, 64, "Health: 100/100", {
 				fontSize: "16px",
@@ -192,7 +223,17 @@ export class OverworldScene extends Phaser.Scene {
 				if (deadEnt) {
 					deadEnt.sprite.destroy();
 					deadEnt.label.destroy();
+					deadEnt.facingLine?.destroy();
 					this.entities.delete(msg.PlayerDied.entity_id);
+				}
+			} else if ("InventoryUpdated" in msg) {
+				if (msg.InventoryUpdated.entity_id === this.myEntityId) {
+					try {
+						this.inventoryItems = JSON.parse(msg.InventoryUpdated.items_json);
+						this.inventoryText.setText(`Inventory: [${this.inventoryItems.join(", ")}]`);
+					} catch (e) {
+						console.error("Failed to parse inventory", e);
+					}
 				}
 			}
 		});
@@ -242,11 +283,28 @@ export class OverworldScene extends Phaser.Scene {
 			this.net.send({ ZoneTransfer: { target: { AsteroidBase: 1 } } });
 		}
 
-		// --- Interpolation ---
+		// --- Interpolation & Updates ---
+		const worldPoint = this.cameras.main.getWorldPoint(this.input.activePointer.x, this.input.activePointer.y);
+		this.crosshair.setPosition(worldPoint.x, worldPoint.y);
+
 		for (const [_id, ent] of this.entities) {
 			ent.sprite.x += (ent.targetX - ent.sprite.x) * INTERPOLATION_SPEED;
 			ent.sprite.y += (ent.targetY - ent.sprite.y) * INTERPOLATION_SPEED;
 			ent.label.setPosition(ent.sprite.x, ent.sprite.y - 20);
+			if (ent.facingLine) {
+				ent.facingLine.setPosition(ent.sprite.x, ent.sprite.y);
+			}
+		}
+
+		// Update my facing line
+		if (!this.isDead) {
+			const me = this.entities.get(this.myEntityId);
+			if (me && me.facingLine) {
+				const dx = worldPoint.x - me.sprite.x;
+				const dy = worldPoint.y - me.sprite.y;
+				const angle = Math.atan2(dy, dx);
+				me.facingLine.setRotation(angle);
+			}
 		}
 
 		// --- HUD ---
@@ -279,6 +337,7 @@ export class OverworldScene extends Phaser.Scene {
 			if (!seenIds.has(id)) {
 				ent.sprite.destroy();
 				ent.label.destroy();
+				ent.facingLine?.destroy();
 				this.entities.delete(id);
 			}
 		}
@@ -326,8 +385,19 @@ export class OverworldScene extends Phaser.Scene {
 			.setOrigin(0.5)
 			.setDepth(10);
 
+		let facingLine: Phaser.GameObjects.Graphics | undefined;
+		if (isMe) {
+			facingLine = this.add.graphics();
+			facingLine.lineStyle(2, 0xffffff, 0.8);
+			facingLine.moveTo(0, 0);
+			facingLine.lineTo(20, 0);
+			facingLine.strokePath();
+			facingLine.setDepth(11);
+		}
+
 		this.entities.set(entity.id, {
 			sprite,
+			facingLine,
 			label,
 			targetX: entity.position.x,
 			targetY: entity.position.y,

@@ -43,6 +43,7 @@ impl Simulation {
             systems::projectile_expiration_system,
             systems::zone_transfer_system,
             systems::item_pickup_system,
+            systems::npc_ai_system,
         ).chain());
 
         Self { world, schedule }
