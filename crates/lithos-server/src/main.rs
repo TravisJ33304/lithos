@@ -120,6 +120,9 @@ async fn main() -> anyhow::Result<()> {
     let _ = sqlx::query("ALTER TABLE players ADD COLUMN IF NOT EXISTS faction_id BIGINT")
         .execute(&pool)
         .await;
+    let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_players_username ON players(username)")
+        .execute(&pool)
+        .await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS base_structures (

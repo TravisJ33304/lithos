@@ -407,7 +407,7 @@ pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> Result<()> {
         broadcast_snapshots(&mut sim, &connections);
 
         flush_counter += 1;
-        if flush_counter.is_multiple_of(60) {
+        if flush_counter.is_multiple_of(600) {
             flush_player_states(&sim, &connections, &pool).await;
         }
 
@@ -417,14 +417,16 @@ pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> Result<()> {
         }
 
         let elapsed = tick_start.elapsed();
-        if elapsed < tick_duration {
-            tokio::time::sleep(tick_duration - elapsed).await;
-        } else {
+        if elapsed >= tick_duration {
             tracing::warn!(
                 elapsed_ms = elapsed.as_millis(),
                 budget_ms = tick_duration.as_millis(),
                 "tick overran budget"
             );
+        }
+
+        if elapsed < tick_duration {
+            tokio::time::sleep(tick_duration - elapsed).await;
         }
     }
 }
@@ -941,6 +943,9 @@ async fn flush_player_states(
     connections: &ConnectionManager,
     pool: &sqlx::PgPool,
 ) {
+    use futures::future::join_all;
+
+    let mut futures = Vec::new();
     for conn in connections.iter() {
         if let Some(&ecs_entity) = sim
             .world
@@ -962,18 +967,24 @@ async fn flush_player_states(
                 .map(|i| serde_json::to_string(&i.items).unwrap_or_else(|_| "[]".to_string()))
                 .unwrap_or_else(|| "[]".to_string());
 
-            let _ = sqlx::query(
-                "UPDATE players SET x = $1, y = $2, health = $3, inventory = $4 WHERE username = $5",
-            )
-            .bind(pos.x as f64)
-            .bind(pos.y as f64)
-            .bind(hp as f64)
-            .bind(inv)
-            .bind(&conn.username)
-            .execute(pool)
-            .await;
+            let username = conn.username.clone();
+            let pool = pool.clone();
+            futures.push(async move {
+                let _ = sqlx::query(
+                    "UPDATE players SET x = $1, y = $2, health = $3, inventory = $4 WHERE username = $5",
+                )
+                .bind(pos.x as f64)
+                .bind(pos.y as f64)
+                .bind(hp as f64)
+                .bind(inv)
+                .bind(&username)
+                .execute(&pool)
+                .await;
+            });
         }
     }
+
+    join_all(futures).await;
 }
 
 /// Build and send state snapshots to all connected clients.
