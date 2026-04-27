@@ -1,6 +1,6 @@
 # Lithos
 
-> Top-down 2D multiplayer survival-crafting game — Rust meets Rimworld, in the browser.
+> Top-down 2D multiplayer survival-crafting game.
 
 Factions build persistent bases on private asteroids, venturing into a shared, procedurally generated overworld to gather resources, fight PvE/PvP threats, and extract loot back home.
 
