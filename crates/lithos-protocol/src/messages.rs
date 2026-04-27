@@ -59,6 +59,7 @@ pub enum ServerMessage {
         player_id: PlayerId,
         entity_id: EntityId,
         zone: ZoneId,
+        world_seed: u32,
     },
 
     /// A full or delta state snapshot of all visible entities.

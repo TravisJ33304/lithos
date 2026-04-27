@@ -32,7 +32,7 @@ export type ClientMessage =
 // ── Server → Client ──────────────────────────────────────────────────
 
 export type ServerMessage =
-	| { JoinAck: { player_id: string; entity_id: number; zone: ZoneId } }
+	| { JoinAck: { player_id: string; entity_id: number; zone: ZoneId; world_seed: number } }
 	| {
 			StateSnapshot: {
 				tick: number;

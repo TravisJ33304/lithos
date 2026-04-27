@@ -5,6 +5,7 @@
  */
 
 import * as Phaser from "phaser";
+import { createNoise2D } from "simplex-noise";
 import type { NetworkClient } from "../net/NetworkClient";
 import type { EntitySnapshot, ServerMessage, Vec2 } from "../types/protocol";
 
@@ -14,6 +15,7 @@ interface OverworldData {
 	playerId: string;
 	entityId: number;
 	zone: { Overworld: null } | { AsteroidBase: number };
+	worldSeed?: number;
 }
 
 /** Runtime state for a rendered entity. */
@@ -52,6 +54,8 @@ export class OverworldScene extends Phaser.Scene {
 	private fpsText!: Phaser.GameObjects.Text;
 	private tickText!: Phaser.GameObjects.Text;
 	private lastDirection: Vec2 = { x: 0, y: 0 };
+	private noise2D!: (x: number, y: number) => number;
+	private worldSeed: number = 12345;
 
 	constructor() {
 		super({ key: "OverworldScene" });
@@ -60,6 +64,17 @@ export class OverworldScene extends Phaser.Scene {
 	init(data: OverworldData): void {
 		this.net = data.net;
 		this.myEntityId = data.entityId;
+		if (data.worldSeed) {
+			this.worldSeed = data.worldSeed;
+		}
+		
+		// Create a simple deterministic random function for simplex-noise
+		let s = this.worldSeed;
+		const random = () => {
+			const x = Math.sin(s++) * 10000;
+			return x - Math.floor(x);
+		};
+		this.noise2D = createNoise2D(random);
 	}
 
 	create(): void {
@@ -240,6 +255,32 @@ export class OverworldScene extends Phaser.Scene {
 	}
 
 	update(_time: number, _delta: number): void {
+		const me = this.entities.get(this.myEntityId);
+
+		if (me && !this.isDead) {
+			// Calculate Biome Background Color
+			const pos = me.sprite;
+			const dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y);
+			const noiseVal = this.noise2D(pos.x / 1000.0, pos.y / 1000.0);
+			const perturbedDist = dist + noiseVal * 500.0;
+			
+			let targetColor = Phaser.Display.Color.HexStringToColor("#111111"); // OuterRim (Dark Gray)
+			if (perturbedDist < 1500.0) {
+				targetColor = Phaser.Display.Color.HexStringToColor("#330000"); // Core (Deep Red)
+			} else if (perturbedDist < 3500.0) {
+				targetColor = Phaser.Display.Color.HexStringToColor("#1a0a2e"); // MidZone (Purple/Blue)
+			}
+
+			// Lerp color for smooth transition
+			const currentColor = Phaser.Display.Color.Interpolate.ColorWithColor(
+				this.cameras.main.backgroundColor, 
+				targetColor, 
+				100, 
+				5
+			);
+			this.cameras.main.setBackgroundColor(currentColor);
+		}
+
 		if (this.isDead) {
 			// Handle respawn
 			if (this.input.keyboard && Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R))) {

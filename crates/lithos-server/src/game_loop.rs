@@ -52,7 +52,7 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
     use lithos_world::components::{Npc, NpcState, Health, Weapon, Collider, Inventory};
     use rand::Rng;
     let mut rng = rand::thread_rng();
-    let generator = WorldGenerator::new(12345);
+    let generator = WorldGenerator::new(config.world_seed);
     for _ in 0..100 {
         let x = rng.gen_range(-4000.0..4000.0);
         let y = rng.gen_range(-4000.0..4000.0);
@@ -94,7 +94,7 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
 
         // 1. Drain all network events.
         while let Ok(event) = event_rx.try_recv() {
-            handle_event(event, &mut sim, &mut connections);
+            handle_event(event, &mut sim, &mut connections, config.world_seed);
         }
 
         // 2. Run one simulation tick.
@@ -128,6 +128,7 @@ fn handle_event(
     event: NetworkEvent,
     sim: &mut Simulation,
     connections: &mut ConnectionManager,
+    world_seed: u32,
 ) {
     match event {
         NetworkEvent::Connected { entity_id, outbound_tx } => {
@@ -158,6 +159,7 @@ fn handle_event(
                 player_id,
                 entity_id,
                 zone: ZoneId::Overworld,
+                world_seed,
             };
             if let Ok(bytes) = codec::encode(&ack) {
                 let _ = outbound_tx.send(bytes);
@@ -263,12 +265,35 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
         }
     }
 
-    // Send a personalized snapshot to each client (with their last_processed_seq).
+    // Send a personalized snapshot to each client (with their last_processed_seq and culled entities).
     for conn in connections.iter() {
+        let mut client_pos = Vec2::ZERO;
+        let mut client_zone = ZoneId::Overworld;
+        
+        // Find this client's position and zone to filter interest
+        for e in &entities {
+            if e.id == conn.entity_id {
+                client_pos = e.position;
+                client_zone = e.zone;
+                break;
+            }
+        }
+
+        // Filter entities: must be in same zone, and within interest radius (1500 units)
+        let mut visible_entities = Vec::with_capacity(entities.len());
+        for e in &entities {
+            if e.zone == client_zone {
+                let dist_sq = (e.position - client_pos).length_squared();
+                if dist_sq < 1500.0 * 1500.0 {
+                    visible_entities.push(e.clone());
+                }
+            }
+        }
+
         let snapshot = ServerMessage::StateSnapshot {
             tick,
             last_processed_seq: last_seq_map.get(&conn.entity_id).copied().unwrap_or(0),
-            entities: entities.clone(),
+            entities: visible_entities,
         };
         if let Ok(bytes) = codec::encode(&snapshot) {
             let _ = conn.outbound_tx.send(bytes);

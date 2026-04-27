@@ -78,6 +78,7 @@ mod tests {
             player_id: PlayerId::new(),
             entity_id: EntityId(1),
             zone: ZoneId::Overworld,
+            world_seed: 12345,
         };
         let bytes = encode(&msg).unwrap();
         let decoded: ServerMessage = decode(&bytes).unwrap();

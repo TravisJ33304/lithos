@@ -20,6 +20,8 @@ pub struct ServerConfig {
     pub tick_rate: u32,
     /// Maximum concurrent players.
     pub max_players: usize,
+    /// World Generation Seed
+    pub world_seed: u32,
 }
 
 impl Default for ServerConfig {
@@ -28,6 +30,7 @@ impl Default for ServerConfig {
             listen_addr: "0.0.0.0:9001".to_string(),
             tick_rate: 20,
             max_players: 100,
+            world_seed: 12345,
         }
     }
 }

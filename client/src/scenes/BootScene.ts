@@ -56,6 +56,7 @@ export class BootScene extends Phaser.Scene {
 						playerId: msg.JoinAck.player_id,
 						entityId: msg.JoinAck.entity_id,
 						zone: msg.JoinAck.zone,
+						worldSeed: msg.JoinAck.world_seed,
 					});
 				});
 			}
