@@ -4,8 +4,9 @@
  * Uses MessagePack for binary serialization to match the Rust server codec.
  */
 
-import { decode, encode } from "@msgpack/msgpack";
+import { encode } from "@msgpack/msgpack";
 import type { ClientMessage, ServerMessage } from "../types/protocol";
+import { decodeServerMessage } from "./decodeServerMessage";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 
@@ -68,7 +69,7 @@ export class NetworkClient {
 
 			ws.onmessage = (event) => {
 				const data = new Uint8Array(event.data as ArrayBuffer);
-				const msg = decode(data) as ServerMessage;
+				const msg = decodeServerMessage(data);
 
 				if ("Pong" in msg) {
 					const now = Date.now();

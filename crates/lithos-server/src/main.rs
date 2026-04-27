@@ -114,8 +114,12 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     // Migration for existing tables
-    let _ = sqlx::query("ALTER TABLE players ADD COLUMN IF NOT EXISTS auth_subject VARCHAR(255)").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE players ADD COLUMN IF NOT EXISTS faction_id BIGINT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE players ADD COLUMN IF NOT EXISTS auth_subject VARCHAR(255)")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE players ADD COLUMN IF NOT EXISTS faction_id BIGINT")
+        .execute(&pool)
+        .await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS base_structures (

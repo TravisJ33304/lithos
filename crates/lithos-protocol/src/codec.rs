@@ -2,6 +2,9 @@
 //!
 //! All messages are serialized as MessagePack binary frames for efficient
 //! transmission over WebSocket connections.
+//!
+//! Encoding uses MessagePack’s compact struct layout (`rmp_serde::to_vec`).
+//! Decoding accepts both compact and map-based layouts (`rmp_serde::from_slice`).
 
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +20,7 @@ pub enum CodecError {
 
 /// Encode a value to a MessagePack byte vector.
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, CodecError> {
-    rmp_serde::to_vec_named(value).map_err(CodecError::Encode)
+    rmp_serde::to_vec(value).map_err(CodecError::Encode)
 }
 
 /// Decode a value from a MessagePack byte slice.

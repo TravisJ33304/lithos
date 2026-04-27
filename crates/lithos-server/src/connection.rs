@@ -1,5 +1,6 @@
 //! Connection management — tracks connected clients and their metadata.
 
+use bytes::Bytes;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
@@ -15,7 +16,7 @@ pub struct ClientConnection {
     /// The player's username (used for DB persistence).
     pub username: String,
     /// Channel to send serialized messages back to this client's WebSocket task.
-    pub outbound_tx: mpsc::UnboundedSender<Vec<u8>>,
+    pub outbound_tx: mpsc::UnboundedSender<Bytes>,
 }
 
 /// Manages all connected clients.
@@ -36,7 +37,7 @@ impl ConnectionManager {
         entity_id: EntityId,
         faction_id: Option<u64>,
         username: String,
-        outbound_tx: mpsc::UnboundedSender<Vec<u8>>,
+        outbound_tx: mpsc::UnboundedSender<Bytes>,
     ) {
         self.clients.insert(
             entity_id,

@@ -12,4 +12,12 @@ uuid = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+bytes = "1"
+criterion = "0.5"
+hex = "0.4"
 proptest = "1"
+rmpv = "1"
+
+[[bench]]
+name = "encode_snapshot"
+harness = false

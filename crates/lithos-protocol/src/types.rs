@@ -228,7 +228,7 @@ pub struct TraderQuote {
 }
 
 /// Snapshot of a single entity's state, sent from server to clients.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EntitySnapshot {
     pub id: EntityId,
     pub position: Vec2,

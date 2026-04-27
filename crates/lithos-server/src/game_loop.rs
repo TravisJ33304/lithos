@@ -1,6 +1,7 @@
 //! The main game loop — ties together networking, ECS simulation, and broadcasting.
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use rand::Rng;
 use serde::Serialize;
 use sqlx::Row;
@@ -128,9 +129,9 @@ async fn resolve_join_from_token(token: &str, config: &ServerConfig) -> Result<A
     })
 }
 
-fn encode_and_send(outbound: &mpsc::UnboundedSender<Vec<u8>>, msg: &ServerMessage) {
+fn encode_and_send(outbound: &mpsc::UnboundedSender<Bytes>, msg: &ServerMessage) {
     if let Ok(bytes) = codec::encode(msg) {
-        let _ = outbound.send(bytes);
+        let _ = outbound.send(Bytes::from(bytes));
     }
 }
 
@@ -141,18 +142,20 @@ fn send_to_entity(connections: &ConnectionManager, entity_id: EntityId, msg: &Se
 }
 
 fn broadcast_all(connections: &ConnectionManager, msg: &ServerMessage) {
-    if let Ok(bytes) = codec::encode(msg) {
+    if let Ok(vec) = codec::encode(msg) {
+        let payload = Bytes::from(vec);
         for conn in connections.iter() {
-            let _ = conn.outbound_tx.send(bytes.clone());
+            let _ = conn.outbound_tx.send(payload.clone());
         }
     }
 }
 
 fn send_to_faction(connections: &ConnectionManager, faction_id: u64, msg: &ServerMessage) {
-    if let Ok(bytes) = codec::encode(msg) {
+    if let Ok(vec) = codec::encode(msg) {
+        let payload = Bytes::from(vec);
         for conn in connections.iter() {
             if conn.faction_id == Some(faction_id) {
-                let _ = conn.outbound_tx.send(bytes.clone());
+                let _ = conn.outbound_tx.send(payload.clone());
             }
         }
     }
@@ -431,7 +434,7 @@ async fn handle_event(
     event: NetworkEvent,
     sim: &mut Simulation,
     connections: &mut ConnectionManager,
-    unauth_connections: &mut HashMap<EntityId, mpsc::UnboundedSender<Vec<u8>>>,
+    unauth_connections: &mut HashMap<EntityId, mpsc::UnboundedSender<Bytes>>,
     config: &ServerConfig,
     pool: &sqlx::PgPool,
 ) -> Result<()> {
@@ -980,7 +983,6 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
     }
 
     let tick = sim.current_tick();
-    let last_seq_map = sim.world.resource::<LastProcessedSeq>().map.clone();
     let entity_map = sim.world.resource::<EntityRegistry>().by_entity.clone();
 
     use lithos_protocol::SnapshotEntityType;
@@ -1029,6 +1031,14 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
         });
     }
 
+    let last_seq_for_clients: HashMap<EntityId, u32> = {
+        let map = &sim.world.resource::<LastProcessedSeq>().map;
+        connections
+            .iter()
+            .map(|c| (c.entity_id, map.get(&c.entity_id).copied().unwrap_or(0)))
+            .collect()
+    };
+
     for conn in connections.iter() {
         let mut client_pos = Vec2::ZERO;
         let mut client_zone = ZoneId::Overworld;
@@ -1047,15 +1057,19 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
             }
             let dist_sq = (entity.position - client_pos).length_squared();
             if dist_sq < 1500.0 * 1500.0 {
-                visible_entities.push(entity.clone());
+                visible_entities.push(*entity);
             }
         }
 
+        let last_processed_seq = last_seq_for_clients
+            .get(&conn.entity_id)
+            .copied()
+            .unwrap_or(0);
         encode_and_send(
             &conn.outbound_tx,
             &ServerMessage::StateSnapshot {
                 tick,
-                last_processed_seq: last_seq_map.get(&conn.entity_id).copied().unwrap_or(0),
+                last_processed_seq,
                 entities: visible_entities,
             },
         );

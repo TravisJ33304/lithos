@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 tokio = { workspace = true }
 tokio-tungstenite = "0.26"
+bytes = "1"
 futures-util = "0.3"
 serde = { workspace = true }
 rmp-serde = { workspace = true }

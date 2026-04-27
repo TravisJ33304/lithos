@@ -1,5 +1,6 @@
 //! WebSocket network layer — accepts connections and bridges to the game loop.
 
+use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -13,7 +14,7 @@ pub enum NetworkEvent {
     /// A new client connected.
     Connected {
         entity_id: EntityId,
-        outbound_tx: mpsc::UnboundedSender<Vec<u8>>,
+        outbound_tx: mpsc::UnboundedSender<Bytes>,
     },
     /// A client sent a message.
     Message {
@@ -46,7 +47,7 @@ pub async fn handle_connection(
     let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
     // Channel for outbound messages (game loop → this client).
-    let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<Bytes>();
 
     // Notify game loop of new connection.
     let _ = event_tx.send(NetworkEvent::Connected {
@@ -57,7 +58,7 @@ pub async fn handle_connection(
     // Spawn a task to forward outbound messages to the WebSocket.
     let write_handle = tokio::spawn(async move {
         while let Some(bytes) = outbound_rx.recv().await {
-            if ws_tx.send(Message::Binary(bytes.into())).await.is_err() {
+            if ws_tx.send(Message::Binary(bytes)).await.is_err() {
                 break;
             }
         }

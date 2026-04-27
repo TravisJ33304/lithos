@@ -15,6 +15,17 @@ target/
 # Node.js
 client/node_modules/
 client/dist/
+tools/node_modules/
+
+# Profiling and local server runs (repo root)
+perf.data
+perf.data.old
+flamegraph*.svg
+server.log
+server.pid
+
+# Local drafts (track in git after removing this line if you want it versioned)
+implementation_plan.md
 
 # OS files
 .DS_Store
