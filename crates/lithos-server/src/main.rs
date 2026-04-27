@@ -69,7 +69,11 @@ impl Default for ServerConfig {
             region: std::env::var("SERVER_REGION").unwrap_or_else(|_| "local".to_string()),
             websocket_public_url: std::env::var("WS_PUBLIC_URL")
                 .unwrap_or_else(|_| "ws://127.0.0.1:9001".to_string()),
-            supabase_jwks_url: std::env::var("SUPABASE_JWKS_URL").ok(),
+            supabase_jwks_url: if std::env::var("DISABLE_AUTH").is_ok() {
+                None
+            } else {
+                std::env::var("SUPABASE_JWKS_URL").ok()
+            },
             supabase_jwt_issuer: std::env::var("SUPABASE_JWT_ISSUER").ok(),
             supabase_jwt_audience: std::env::var("SUPABASE_JWT_AUDIENCE").ok(),
         }
