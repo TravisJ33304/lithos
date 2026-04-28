@@ -142,6 +142,13 @@ pub struct HealthChangedEvent {
 }
 
 #[derive(Debug, Clone)]
+pub struct OxygenChangedEvent {
+    pub entity_id: EntityId,
+    pub current: f32,
+    pub max: f32,
+}
+
+#[derive(Debug, Clone)]
 pub struct PlayerDiedEvent {
     pub entity_id: EntityId,
 }
@@ -169,6 +176,7 @@ pub struct ProgressionUpdatedEvent {
 pub struct CombatEvents {
     pub spawn_projectiles: Vec<SpawnProjectileEvent>,
     pub health_changes: Vec<HealthChangedEvent>,
+    pub oxygen_changes: Vec<OxygenChangedEvent>,
     pub deaths: Vec<PlayerDiedEvent>,
     pub inventory_updates: Vec<InventoryUpdatedEvent>,
     pub credits_changes: Vec<CreditsChangedEvent>,
@@ -281,6 +289,44 @@ pub struct MiningEvent {
 pub struct MiningEvents {
     pub events: Vec<MiningEvent>,
     pub depleted: Vec<EntityId>,
+}
+
+/// A pending trade (buy or sell) request from a client.
+#[derive(Debug, Clone)]
+pub struct TradeRequest {
+    pub entity_id: EntityId,
+    pub item: String,
+    pub quantity: u32,
+    pub is_sell: bool,
+}
+
+/// Queue of trade inputs to be processed this tick.
+#[derive(Resource, Debug, Default)]
+pub struct TradeQueue {
+    pub requests: Vec<TradeRequest>,
+}
+
+/// Event emitted when a trade is executed.
+#[derive(Debug, Clone)]
+pub struct TradeEvent {
+    pub entity_id: EntityId,
+    pub item: String,
+    pub quantity: u32,
+    pub total_price: i64,
+    pub is_sell: bool,
+}
+
+/// Events emitted this tick from trade activity.
+#[derive(Resource, Debug, Default)]
+pub struct TradeEvents {
+    pub events: Vec<TradeEvent>,
+    pub failures: Vec<(EntityId, String)>,
+}
+
+/// Tracks which zones have had their base structures loaded from persistence.
+#[derive(Resource, Debug, Default)]
+pub struct LoadedZones {
+    pub zones: std::collections::HashSet<lithos_protocol::ZoneId>,
 }
 
 /// Trader market simulation state.

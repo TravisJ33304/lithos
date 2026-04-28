@@ -15,9 +15,9 @@ use lithos_protocol::{
     ServerMessage, SkillBranch, Vec2, ZoneId, codec,
 };
 use lithos_world::components::{
-    BaseTile, Collider, Health, Inventory, Npc, NpcState, NpcType, Oxygen, Player, Position,
-    PositionHistory, PowerConsumer, PowerGenerator, Progression, ResourceNode, ResourceType,
-    TileType, Velocity, Weapon, Zone,
+    BaseTile, Collider, Health, Inventory, LastLoadoutTick, Npc, NpcState, NpcType, Oxygen, Player,
+    Position, PositionHistory, PowerConsumer, PowerGenerator, Progression, ResourceNode,
+    ResourceType, TileType, Velocity, Weapon, Zone,
 };
 use lithos_world::resources::{
     ChatEvent, ChatEvents, EntityRegistry, FactionVaults, FireRequest, InputQueue,
@@ -402,6 +402,7 @@ pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> Result<()> {
         send_zone_changes(&mut sim, &connections);
         send_combat_events(&mut sim, &connections);
         send_mining_events(&mut sim, &connections);
+        send_trade_events(&mut sim, &connections);
         send_chat_events(&mut sim, &connections);
         send_dynamic_events(&mut sim, &connections);
         send_raid_events(&mut sim, &connections);
@@ -526,6 +527,7 @@ async fn handle_event(
                 }
 
                 let player_id = lithos_protocol::PlayerId::new();
+                let current_tick = sim.current_tick();
                 let ecs_entity = sim
                     .world
                     .spawn((
@@ -550,11 +552,18 @@ async fn handle_event(
                             last_fired_time: 0.0,
                         },
                         Collider { radius: 14.0 },
-                        Inventory { items: vec![] },
+                        Inventory {
+                            items: vec![
+                                "mining_laser".to_string(),
+                                "scrap".to_string(),
+                                "scrap".to_string(),
+                            ],
+                        },
                         Oxygen {
                             current: 100.0,
                             max: 100.0,
                         },
+                        LastLoadoutTick { tick: current_tick },
                     ))
                     .id();
 
@@ -596,10 +605,113 @@ async fn handle_event(
                     });
             }
             ClientMessage::ZoneTransfer { target } => {
+                let mut resolved_target = target;
+
+                // Redirect AsteroidBase requests to faction-specific base.
+                if matches!(target, ZoneId::AsteroidBase(_))
+                    && let Some(conn) = connections.get(entity_id)
+                {
+                    if let Some(faction_id) = conn.faction_id {
+                        resolved_target = ZoneId::AsteroidBase(faction_id as u32);
+                    } else {
+                        send_to_entity(
+                            connections,
+                            entity_id,
+                            &ServerMessage::ChatMessage {
+                                from_entity_id: lithos_protocol::EntityId(0),
+                                channel: ChatChannel::Global,
+                                text: "You need a faction to enter an Asteroid Base."
+                                    .to_string(),
+                                sent_at_unix_ms: now_unix_ms(),
+                            },
+                        );
+                        return Ok(());
+                    }
+                }
+
+                // Load base structures from DB if entering an AsteroidBase for the first time.
+                if let ZoneId::AsteroidBase(base_faction_id) = resolved_target {
+                    let already_loaded = sim
+                        .world
+                        .resource::<lithos_world::resources::LoadedZones>()
+                        .zones
+                        .contains(&resolved_target);
+
+                    if !already_loaded {
+                        sim.world
+                            .resource_mut::<lithos_world::resources::LoadedZones>()
+                            .zones
+                            .insert(resolved_target);
+
+                        let zone_str = format!("asteroid_{base_faction_id}");
+                        let rows = sqlx::query(
+                            "SELECT tile_type, grid_x, grid_y FROM base_structures WHERE zone_id = $1",
+                        )
+                        .bind(&zone_str)
+                        .fetch_all(pool)
+                        .await?;
+
+                        for row in rows {
+                            let tile_type_str: String = row.try_get("tile_type")?;
+                            let grid_x: i32 = row.try_get("grid_x")?;
+                            let grid_y: i32 = row.try_get("grid_y")?;
+
+                            let tile_type = match tile_type_str.as_str() {
+                                "wall_segment" => Some(TileType::Wall),
+                                "door" => Some(TileType::Door),
+                                "workbench" => Some(TileType::Workbench),
+                                "generator" => Some(TileType::Generator),
+                                _ => None,
+                            };
+
+                            if let Some(tt) = tile_type {
+                                let world_pos = Vec2::new(grid_x as f32 * 40.0, grid_y as f32 * 40.0);
+                                let id = sim
+                                    .world
+                                    .resource_mut::<EntityRegistry>()
+                                    .next_entity_id();
+                                let mut entity = sim.world.spawn((
+                                    Position(world_pos),
+                                    Zone(resolved_target),
+                                    BaseTile {
+                                        tile_type: tt.clone(),
+                                        grid_x,
+                                        grid_y,
+                                    },
+                                    Collider { radius: 20.0 },
+                                ));
+
+                                match tt {
+                                    TileType::Generator => {
+                                        entity.insert(PowerGenerator {
+                                            output_kw: 100.0,
+                                            fuel_remaining: 99_999.0,
+                                        });
+                                    }
+                                    TileType::Door | TileType::Workbench => {
+                                        entity.insert(PowerConsumer {
+                                            required_kw: 10.0,
+                                            is_powered: false,
+                                        });
+                                    }
+                                    TileType::Wall => {}
+                                }
+                                let ecs_id = entity.id();
+                                sim.world
+                                    .resource_mut::<EntityRegistry>()
+                                    .register(id, ecs_id);
+                            }
+                        }
+                    }
+                }
+
                 sim.world
                     .resource_mut::<InputQueue>()
                     .zone_transfers
-                    .push(ZoneTransferRequest { entity_id, target });
+                    .push(ZoneTransferRequest {
+                        entity_id,
+                        target: resolved_target,
+                    });
             }
             ClientMessage::Fire {
                 direction,
@@ -682,8 +794,7 @@ async fn handle_event(
                         &ServerMessage::CraftDenied {
                             reason: format!(
                                 "requires {:?} level {}",
-                                recipe_def.required_branch,
-                                recipe_def.required_level
+                                recipe_def.required_branch, recipe_def.required_level
                             ),
                         },
                     );
@@ -879,6 +990,28 @@ async fn handle_event(
                     entity_id,
                     &ServerMessage::TraderQuotes { quotes },
                 );
+            }
+            ClientMessage::SellItem { item, quantity } => {
+                sim.world
+                    .resource_mut::<lithos_world::resources::TradeQueue>()
+                    .requests
+                    .push(lithos_world::resources::TradeRequest {
+                        entity_id,
+                        item,
+                        quantity,
+                        is_sell: true,
+                    });
+            }
+            ClientMessage::BuyItem { item, quantity } => {
+                sim.world
+                    .resource_mut::<lithos_world::resources::TradeQueue>()
+                    .requests
+                    .push(lithos_world::resources::TradeRequest {
+                        entity_id,
+                        item,
+                        quantity,
+                        is_sell: false,
+                    });
             }
             ClientMessage::InitiateRaid {
                 defender_faction_id,
@@ -1166,6 +1299,17 @@ fn send_combat_events(sim: &mut Simulation, connections: &ConnectionManager) {
         );
     }
 
+    for event in &events.oxygen_changes {
+        broadcast_all(
+            connections,
+            &ServerMessage::OxygenChanged {
+                entity_id: event.entity_id,
+                current: event.current,
+                max: event.max,
+            },
+        );
+    }
+
     for event in &events.deaths {
         broadcast_all(
             connections,
@@ -1256,6 +1400,70 @@ fn send_mining_events(sim: &mut Simulation, connections: &ConnectionManager) {
                 .unregister(entity_id);
             sim.world.despawn(ecs_entity);
         }
+    }
+}
+
+fn send_trade_events(sim: &mut Simulation, connections: &ConnectionManager) {
+    let (events, failures) = {
+        let trade = sim.world.resource::<lithos_world::resources::TradeEvents>();
+        (trade.events.clone(), trade.failures.clone())
+    };
+
+    for event in &events {
+        // Send inventory update.
+        if let Some(&ecs_entity) = sim
+            .world
+            .resource::<EntityRegistry>()
+            .by_id
+            .get(&event.entity_id)
+            && let Some(inv) = sim.world.entity(ecs_entity).get::<Inventory>()
+        {
+            send_to_entity(
+                connections,
+                event.entity_id,
+                &ServerMessage::InventoryUpdated {
+                    entity_id: event.entity_id,
+                    items_json: serde_json::to_string(&inv.items)
+                        .unwrap_or_else(|_| "[]".to_string()),
+                },
+            );
+        }
+
+        // Send faction credits update.
+        if let Some(&ecs_entity) = sim
+            .world
+            .resource::<EntityRegistry>()
+            .by_id
+            .get(&event.entity_id)
+            && let Some(player) = sim.world.entity(ecs_entity).get::<Player>()
+            && let Some(faction_id) = player.faction_id
+        {
+            let balance = sim
+                .world
+                .resource::<FactionVaults>()
+                .balances
+                .get(&faction_id)
+                .copied()
+                .unwrap_or(0);
+            send_to_entity(
+                connections,
+                event.entity_id,
+                &ServerMessage::CreditsChanged {
+                    faction_id,
+                    balance,
+                },
+            );
+        }
+    }
+
+    for (entity_id, reason) in failures {
+        send_to_entity(
+            connections,
+            entity_id,
+            &ServerMessage::TradeFailed {
+                reason: reason.clone(),
+            },
+        );
     }
 }
 

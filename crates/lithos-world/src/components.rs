@@ -204,6 +204,12 @@ pub struct ProgressionBranchState {
     pub xp_to_next: u32,
 }
 
+/// Tracks when the player last received a Scrapper Dispenser loadout.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct LastLoadoutTick {
+    pub tick: u64,
+}
+
 /// Faction vault balance.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct FactionVault {

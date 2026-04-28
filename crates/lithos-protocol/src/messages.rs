@@ -88,6 +88,22 @@ pub enum ClientMessage {
         /// Optional explicit target. If None, server auto-targets nearest node.
         target_entity_id: Option<EntityId>,
     },
+
+    /// Sell an item from inventory to the nearest trader.
+    SellItem {
+        /// Item type to sell (e.g. "iron").
+        item: String,
+        /// Quantity to sell.
+        quantity: u32,
+    },
+
+    /// Buy an item from the nearest trader.
+    BuyItem {
+        /// Item type to buy (e.g. "medkit").
+        item: String,
+        /// Quantity to buy.
+        quantity: u32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +139,13 @@ pub enum ServerMessage {
         entity_id: EntityId,
         health: f32,
         max_health: f32,
+    },
+
+    /// Notification that a player's oxygen level changed.
+    OxygenChanged {
+        entity_id: EntityId,
+        current: f32,
+        max: f32,
     },
 
     /// Notification that a player has died.
@@ -201,6 +224,9 @@ pub enum ServerMessage {
 
     /// A crafting request was denied.
     CraftDenied { reason: String },
+
+    /// A trade transaction failed.
+    TradeFailed { reason: String },
 
     /// The server is kicking the client.
     Disconnect { reason: String },

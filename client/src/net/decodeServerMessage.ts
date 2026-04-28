@@ -283,6 +283,23 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				>["HealthChanged"],
 			};
 		}
+		case "OxygenChanged": {
+			if (Array.isArray(payload) && payload.length >= 3) {
+				return {
+					OxygenChanged: {
+						entity_id: asNumber(payload[0]),
+						current: asNumber(payload[1]),
+						max: asNumber(payload[2]),
+					},
+				};
+			}
+			return {
+				OxygenChanged: payload as unknown as Extract<
+					ServerMessage,
+					{ OxygenChanged: unknown }
+				>["OxygenChanged"],
+			};
+		}
 		case "PlayerDied": {
 			if (Array.isArray(payload) && payload.length >= 1) {
 				return { PlayerDied: { entity_id: asNumber(payload[0]) } };
@@ -516,6 +533,17 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 					ServerMessage,
 					{ CraftDenied: unknown }
 				>["CraftDenied"],
+			};
+		}
+		case "TradeFailed": {
+			if (Array.isArray(payload)) {
+				return { TradeFailed: { reason: singleStringArray(payload) } };
+			}
+			return {
+				TradeFailed: payload as unknown as Extract<
+					ServerMessage,
+					{ TradeFailed: unknown }
+				>["TradeFailed"],
 			};
 		}
 		case "Disconnect": {

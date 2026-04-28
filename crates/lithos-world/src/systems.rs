@@ -3,8 +3,9 @@
 use bevy_ecs::prelude::*;
 
 use crate::components::{
-    Collider, Dead, Health, Inventory, Item, Npc, NpcState, NpcType, Player, Position,
-    PositionHistory, Progression, Projectile, ResourceNode, ResourceType, Velocity, Weapon, Zone,
+    Collider, Dead, Health, Inventory, Item, LastLoadoutTick, Npc, NpcState, NpcType, Player,
+    Position, PositionHistory, Progression, Projectile, ResourceNode, ResourceType, Velocity,
+    Weapon, Zone,
 };
 use crate::resources::{
     ActiveDynamicEvents, CombatEvents, DynamicEventBus, EntityRegistry, FactionVaults,
@@ -216,6 +217,7 @@ pub fn hit_detection_system(
     mut vaults: ResMut<FactionVaults>,
 ) {
     combat_events.health_changes.clear();
+    combat_events.oxygen_changes.clear();
     combat_events.deaths.clear();
     combat_events.inventory_updates.clear();
     combat_events.credits_changes.clear();
@@ -362,9 +364,16 @@ pub fn power_grid_system(
 pub fn life_support_system(
     mut commands: Commands,
     mut combat_events: ResMut<CombatEvents>,
-    registry: Res<EntityRegistry>,
+    mut registry: ResMut<EntityRegistry>,
     mut players: Query<
-        (Entity, &Zone, &mut crate::components::Oxygen, &mut Health),
+        (
+            Entity,
+            &Zone,
+            &Position,
+            &mut crate::components::Oxygen,
+            &mut Health,
+            &mut Inventory,
+        ),
         (With<Player>, Without<Dead>),
     >,
     life_supports: Query<(
@@ -373,7 +382,7 @@ pub fn life_support_system(
         &crate::components::PowerConsumer,
     )>,
 ) {
-    for (entity, p_zone, mut o2, mut health) in players.iter_mut() {
+    for (entity, p_zone, pos, mut o2, mut health, mut inventory) in players.iter_mut() {
         // Overworld space has no oxygen, but players have spacesuits. Asteroid bases need life support.
         if matches!(p_zone.0, lithos_protocol::ZoneId::Overworld) {
             o2.current = o2.max;
@@ -388,6 +397,7 @@ pub fn life_support_system(
             }
         }
 
+        let prev_o2 = o2.current;
         if has_life_support {
             o2.current = (o2.current + 1.0).min(o2.max);
         } else {
@@ -409,28 +419,107 @@ pub fn life_support_system(
                     commands.entity(entity).insert(Dead);
                     if let Some(&id) = registry.by_entity.get(&entity) {
                         combat_events.deaths.push(PlayerDiedEvent { entity_id: id });
+
+                        // Drop all inventory items.
+                        let mut offset = 0.0;
+                        for item in inventory.items.drain(..) {
+                            let drop_pos = pos.0 + lithos_protocol::Vec2::new(offset, offset);
+                            offset += 10.0;
+                            let item_id = registry.next_entity_id();
+                            let item_ent = commands
+                                .spawn((
+                                    Position(drop_pos),
+                                    Velocity(lithos_protocol::Vec2::ZERO),
+                                    Zone(p_zone.0),
+                                    Collider { radius: 6.0 },
+                                    Item { item_type: item },
+                                ))
+                                .id();
+                            registry.register(item_id, item_ent);
+                        }
+                        combat_events.inventory_updates.push(InventoryUpdatedEvent {
+                            entity_id: id,
+                            items_json: "[]".to_string(),
+                        });
                     }
                 }
             }
         }
+
+        // Emit oxygen change if value changed.
+        if (o2.current - prev_o2).abs() > f32::EPSILON
+            && let Some(&id) = registry.by_entity.get(&entity)
+        {
+            combat_events.oxygen_changes.push(crate::resources::OxygenChangedEvent {
+                entity_id: id,
+                current: o2.current,
+                max: o2.max,
+            });
+        }
     }
 }
 
+/// Scrapper Dispenser default loadout items.
+const SCRAPPER_LOADOUT: &[&str] = &["mining_laser", "scrap", "scrap"];
+/// Cooldown between free loadouts (5 minutes at 20 TPS).
+const LOADOUT_COOLDOWN_TICKS: u64 = 5 * 60 * 20;
+
 /// Process respawn requests.
+#[allow(clippy::type_complexity)]
 pub fn respawn_system(
     mut commands: Commands,
     mut input_queue: ResMut<InputQueue>,
     registry: Res<EntityRegistry>,
-    mut query: Query<(Entity, &mut Health, &mut Position, &mut Zone), With<Dead>>,
+    tick: Res<TickCounter>,
+    mut combat_events: ResMut<CombatEvents>,
+    mut query: Query<
+        (
+            Entity,
+            &mut Health,
+            &mut Position,
+            &mut Zone,
+            &mut Inventory,
+            Option<&LastLoadoutTick>,
+        ),
+        With<Dead>,
+    >,
 ) {
     for req in input_queue.respawns.drain(..) {
         if let Some(&ecs_entity) = registry.by_id.get(&req.entity_id)
-            && let Ok((entity, mut health, mut pos, mut zone)) = query.get_mut(ecs_entity)
+            && let Ok((entity, mut health, mut pos, mut zone, mut inventory, last_loadout)) =
+                query.get_mut(ecs_entity)
         {
             health.current = health.max;
             pos.0 = lithos_protocol::Vec2::ZERO; // Respawn at origin for now
             zone.0 = lithos_protocol::ZoneId::Overworld; // Send back to Overworld
             commands.entity(entity).remove::<Dead>();
+
+            // Grant Scrapper Dispenser loadout if cooldown has expired.
+            let can_loadout = match last_loadout {
+                Some(ll) => tick.tick >= ll.tick + LOADOUT_COOLDOWN_TICKS,
+                None => true,
+            };
+
+            if can_loadout {
+                for item in SCRAPPER_LOADOUT {
+                    inventory.items.push(item.to_string());
+                }
+                commands
+                    .entity(entity)
+                    .insert(LastLoadoutTick { tick: tick.tick });
+                combat_events.inventory_updates.push(InventoryUpdatedEvent {
+                    entity_id: req.entity_id,
+                    items_json: format!(
+                        "[{}]",
+                        inventory
+                            .items
+                            .iter()
+                            .map(|s| format!("\"{}\"", s))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                });
+            }
         }
     }
 }
@@ -691,6 +780,166 @@ pub fn mining_system(
             && let Some(&res_id) = registry.by_entity.get(&target_ecs)
         {
             mining_events.depleted.push(res_id);
+        }
+    }
+}
+
+/// Process trade requests: validate, update inventories, and update faction vaults.
+#[allow(clippy::type_complexity)]
+pub fn trade_system(
+    mut trade_queue: ResMut<crate::resources::TradeQueue>,
+    mut trade_events: ResMut<crate::resources::TradeEvents>,
+    mut market: ResMut<crate::resources::TraderMarket>,
+    mut vaults: ResMut<crate::resources::FactionVaults>,
+    registry: Res<crate::resources::EntityRegistry>,
+    mut players: Query<(&mut Inventory, &Position, &Zone, &Player), (With<Player>, Without<Dead>)>,
+    traders: Query<(Entity, &Npc, &Position, &Zone), Without<Dead>>,
+) {
+    trade_events.events.clear();
+    trade_events.failures.clear();
+
+    const TRADE_RANGE: f32 = 200.0;
+
+    for req in trade_queue.requests.drain(..) {
+        let Some(&player_ecs) = registry.by_id.get(&req.entity_id) else {
+            continue;
+        };
+
+        let Ok((mut inventory, player_pos, player_zone, player)) = players.get_mut(player_ecs)
+        else {
+            continue;
+        };
+
+        let Some(faction_id) = player.faction_id else {
+            trade_events
+                .failures
+                .push((req.entity_id, "no faction affiliation".to_string()));
+            continue;
+        };
+
+        // Find nearest trader.
+        let mut nearest_trader: Option<(
+            lithos_protocol::EntityId,
+            &crate::economy::TraderMarketState,
+        )> = None;
+        let mut nearest_dist_sq = TRADE_RANGE * TRADE_RANGE;
+
+        for (trader_ent, npc, trader_pos, trader_zone) in traders.iter() {
+            if npc.npc_type != NpcType::Trader {
+                continue;
+            }
+            if trader_zone.0 != player_zone.0 {
+                continue;
+            }
+            let dist_sq = (player_pos.0 - trader_pos.0).length_squared();
+            if dist_sq >= nearest_dist_sq {
+                continue;
+            }
+            if let Some(&tid) = registry.by_entity.get(&trader_ent)
+                && let Some(quote) = market
+                    .quotes
+                    .iter()
+                    .find(|q| q.trader_entity_id == tid && q.item == req.item)
+            {
+                nearest_dist_sq = dist_sq;
+                nearest_trader = Some((tid, quote));
+            }
+        }
+
+        let Some((trader_id, quote)) = nearest_trader else {
+            trade_events
+                .failures
+                .push((req.entity_id, "no trader nearby".to_string()));
+            continue;
+        };
+
+        if req.is_sell {
+            // Sell: player gives item, faction gets credits.
+            let mut owned = 0u32;
+            for item in &inventory.items {
+                if item == &req.item {
+                    owned += 1;
+                }
+            }
+            if owned < req.quantity {
+                trade_events
+                    .failures
+                    .push((req.entity_id, "insufficient items".to_string()));
+                continue;
+            }
+
+            let total_price = (quote.as_quote().buy_price * req.quantity as f32) as i64;
+            if quote.available_credits < total_price {
+                trade_events
+                    .failures
+                    .push((req.entity_id, "trader lacks credits".to_string()));
+                continue;
+            }
+
+            // Remove items.
+            let mut removed = 0u32;
+            inventory.items.retain(|item| {
+                if removed < req.quantity && item == &req.item {
+                    removed += 1;
+                    false
+                } else {
+                    true
+                }
+            });
+
+            // Update market and vault.
+            if let Some(q) = market
+                .quotes
+                .iter_mut()
+                .find(|q| q.trader_entity_id == trader_id && q.item == req.item)
+            {
+                q.available_credits -= total_price;
+                q.demand_scalar = (q.demand_scalar - 0.02).clamp(0.4, 2.2);
+            }
+            let bal = vaults.balances.entry(faction_id).or_insert(0);
+            *bal = bal.saturating_add(total_price);
+
+            trade_events.events.push(crate::resources::TradeEvent {
+                entity_id: req.entity_id,
+                item: req.item.clone(),
+                quantity: req.quantity,
+                total_price,
+                is_sell: true,
+            });
+        } else {
+            // Buy: player gets item, faction loses credits.
+            let total_price = (quote.as_quote().sell_price * req.quantity as f32) as i64;
+            let bal = vaults.balances.entry(faction_id).or_insert(0);
+            if *bal < total_price {
+                trade_events
+                    .failures
+                    .push((req.entity_id, "insufficient faction credits".to_string()));
+                continue;
+            }
+
+            *bal = bal.saturating_sub(total_price);
+
+            // Update market.
+            if let Some(q) = market
+                .quotes
+                .iter_mut()
+                .find(|q| q.trader_entity_id == trader_id && q.item == req.item)
+            {
+                q.available_credits += total_price;
+                q.demand_scalar = (q.demand_scalar + 0.02).clamp(0.4, 2.2);
+            }
+
+            for _ in 0..req.quantity {
+                inventory.items.push(req.item.clone());
+            }
+
+            trade_events.events.push(crate::resources::TradeEvent {
+                entity_id: req.entity_id,
+                item: req.item.clone(),
+                quantity: req.quantity,
+                total_price,
+                is_sell: false,
+            });
         }
     }
 }

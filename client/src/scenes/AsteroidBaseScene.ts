@@ -1,22 +1,32 @@
 /**
  * AsteroidBaseScene — A faction's private asteroid base.
  *
- * Simple room for the MVP — demonstrates zone transitions.
+ * Renders entities from server snapshots including base structures.
  */
 
 import * as Phaser from "phaser";
 import type { NetworkClient } from "../net/NetworkClient";
-import type { ServerMessage } from "../types/protocol";
+import type { EntitySnapshot, ServerMessage } from "../types/protocol";
 
 interface BaseData {
 	net: NetworkClient;
 	entityId: number;
 }
 
+interface RenderedEntity {
+	sprite: Phaser.GameObjects.Shape;
+	label: Phaser.GameObjects.Text;
+	targetX: number;
+	targetY: number;
+}
+
 export class AsteroidBaseScene extends Phaser.Scene {
 	private net!: NetworkClient;
 	private myEntityId!: number;
 	private spaceKey!: Phaser.Input.Keyboard.Key;
+	private entities: Map<number, RenderedEntity> = new Map();
+	private oxygenText!: Phaser.GameObjects.Text;
+	private powerText!: Phaser.GameObjects.Text;
 
 	constructor() {
 		super({ key: "AsteroidBaseScene" });
@@ -32,39 +42,42 @@ export class AsteroidBaseScene extends Phaser.Scene {
 
 		const { width, height } = this.cameras.main;
 
-		// Room walls.
-		const graphics = this.add.graphics();
-		graphics.lineStyle(2, 0x7c3aed, 0.8);
-		graphics.strokeRect(width / 2 - 200, height / 2 - 150, 400, 300);
-
 		// Title.
 		this.add
-			.text(width / 2, height / 2 - 180, "ASTEROID BASE", {
+			.text(width / 2, 40, "ASTEROID BASE", {
 				fontSize: "24px",
 				color: "#7c3aed",
 				fontFamily: "monospace",
 			})
 			.setOrigin(0.5);
 
-		// Player dot.
-		this.add.circle(width / 2, height / 2, 14, 0x58a6ff);
-
-		this.add
-			.text(width / 2, height / 2 - 20, "YOU", {
-				fontSize: "10px",
-				color: "#58a6ff",
-				fontFamily: "monospace",
-			})
-			.setOrigin(0.5);
-
 		// Instructions.
 		this.add
-			.text(width / 2, height / 2 + 180, "[SPACE] Return to Overworld", {
+			.text(width / 2, height - 40, "[SPACE] Return to Overworld", {
 				fontSize: "14px",
 				color: "#666666",
 				fontFamily: "monospace",
 			})
 			.setOrigin(0.5);
+
+		// O₂ and Power status.
+		this.oxygenText = this.add
+			.text(20, 80, "O₂: --", {
+				fontSize: "14px",
+				color: "#58a6ff",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
+
+		this.powerText = this.add
+			.text(20, 100, "Power: --", {
+				fontSize: "14px",
+				color: "#f0a000",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
 
 		// --- Input ---
 		if (this.input.keyboard) {
@@ -73,25 +86,130 @@ export class AsteroidBaseScene extends Phaser.Scene {
 			);
 		}
 
-		// Network listener for zone changes.
+		// Network listener.
 		this.net.onMessage((msg: ServerMessage) => {
-			if ("ZoneChanged" in msg) {
+			if ("StateSnapshot" in msg) {
+				this.handleSnapshot(msg.StateSnapshot.entities);
+			} else if ("ZoneChanged" in msg) {
 				if ("Overworld" in msg.ZoneChanged.zone) {
 					this.scene.start("OverworldScene", {
 						net: this.net,
 						entityId: this.myEntityId,
 					});
 				}
+			} else if ("OxygenChanged" in msg) {
+				if (msg.OxygenChanged.entity_id === this.myEntityId) {
+					const color = msg.OxygenChanged.current < 30 ? "#ff4444" : "#58a6ff";
+					this.oxygenText.setText(
+						`O₂: ${Math.max(0, Math.floor(msg.OxygenChanged.current))}/${msg.OxygenChanged.max}`,
+					);
+					this.oxygenText.setColor(color);
+				}
 			}
 		});
 	}
 
 	update(): void {
-		// Space to return to Overworld.
 		if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
 			this.net.send({
 				ZoneTransfer: { target: { Overworld: null } },
 			});
 		}
+
+		// Interpolate entities toward their server targets.
+		for (const ent of this.entities.values()) {
+			ent.sprite.x += (ent.targetX - ent.sprite.x) * 0.2;
+			ent.sprite.y += (ent.targetY - ent.sprite.y) * 0.2;
+			ent.label.setPosition(ent.sprite.x, ent.sprite.y - 20);
+		}
+	}
+
+	private handleSnapshot(entities: EntitySnapshot[]): void {
+		const seenIds = new Set<number>();
+
+		for (const entity of entities) {
+			seenIds.add(entity.id);
+			const existing = this.entities.get(entity.id);
+			if (existing) {
+				existing.targetX = entity.position.x;
+				existing.targetY = entity.position.y;
+			} else {
+				this.spawnEntity(entity);
+			}
+		}
+
+		// Remove entities no longer in snapshot.
+		for (const [id, ent] of this.entities) {
+			if (!seenIds.has(id)) {
+				ent.sprite.destroy();
+				ent.label.destroy();
+				this.entities.delete(id);
+			}
+		}
+
+		// Update power status based on nearby generators.
+		let structures = 0;
+		for (const entity of entities) {
+			if (entity.entity_type === "Unknown") {
+				// Base structure - could be generator or consumer.
+				// We can't tell from the snapshot alone, so count all structures.
+				structures += 1;
+			}
+		}
+		this.powerText.setText(`Structures: ${structures}`);
+	}
+
+	private spawnEntity(entity: EntitySnapshot): void {
+		const isMe = entity.id === this.myEntityId;
+		const type = entity.entity_type;
+
+		let color = 0xffffff;
+		let size = 14;
+		let labelText = "";
+
+		if (type === "Player") {
+			color = isMe ? 0x58a6ff : 0x7c3aed;
+			labelText = isMe ? "YOU" : `P${entity.id}`;
+		} else if (type === "Unknown") {
+			// Base structure
+			color = 0x888888;
+			size = 20;
+		}
+
+		let sprite: Phaser.GameObjects.Shape;
+		if (type === "Unknown") {
+			sprite = this.add.rectangle(
+				entity.position.x,
+				entity.position.y,
+				40,
+				40,
+				color,
+			);
+			sprite.setStrokeStyle(1, 0x555555);
+		} else {
+			sprite = this.add.circle(
+				entity.position.x,
+				entity.position.y,
+				size,
+				color,
+			);
+		}
+		sprite.setDepth(10);
+
+		const label = this.add
+			.text(entity.position.x, entity.position.y - size - 10, labelText, {
+				fontSize: "10px",
+				color: isMe ? "#58a6ff" : "#aaaaaa",
+				fontFamily: "monospace",
+			})
+			.setOrigin(0.5)
+			.setDepth(11);
+
+		this.entities.set(entity.id, {
+			sprite,
+			label,
+			targetX: entity.position.x,
+			targetY: entity.position.y,
+		});
 	}
 }

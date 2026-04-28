@@ -73,6 +73,17 @@ export class OverworldScene extends Phaser.Scene {
 	private xpFlashText!: Phaser.GameObjects.Text;
 	private craftDeniedText!: Phaser.GameObjects.Text;
 
+	// Economy state
+	private traderQuotes: import("../types/protocol").TraderQuote[] = [];
+	private factionCredits = 0;
+	private creditsText!: Phaser.GameObjects.Text;
+	private tradeFailedText!: Phaser.GameObjects.Text;
+
+	// Life support state
+	private currentOxygen = 100;
+	private maxOxygen = 100;
+	private oxygenText!: Phaser.GameObjects.Text;
+
 	constructor() {
 		super({ key: "OverworldScene" });
 	}
@@ -258,6 +269,40 @@ export class OverworldScene extends Phaser.Scene {
 			.setDepth(200)
 			.setOrigin(0.5);
 
+		this.creditsText = this.add
+			.text(10, 116, "Credits: 0", {
+				fontSize: "12px",
+				color: "#f0a000",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
+
+		this.tradeFailedText = this.add
+			.text(
+				this.cameras.main.width / 2,
+				this.cameras.main.height / 2 + 80,
+				"",
+				{
+					fontSize: "14px",
+					color: "#ff4444",
+					fontFamily: "monospace",
+					fontStyle: "bold",
+				},
+			)
+			.setScrollFactor(0)
+			.setDepth(200)
+			.setOrigin(0.5);
+
+		this.oxygenText = this.add
+			.text(10, 132, "O₂: 100/100", {
+				fontSize: "12px",
+				color: "#58a6ff",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
+
 		this.inventoryText = this.add
 			.text(
 				this.cameras.main.width / 2,
@@ -383,11 +428,26 @@ export class OverworldScene extends Phaser.Scene {
 						`Health: ${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
 					);
 				}
+			} else if ("OxygenChanged" in msg) {
+				if (msg.OxygenChanged.entity_id === this.myEntityId) {
+					this.currentOxygen = msg.OxygenChanged.current;
+					this.maxOxygen = msg.OxygenChanged.max;
+					const color = this.currentOxygen < 30 ? "#ff4444" : "#58a6ff";
+					this.oxygenText.setText(
+						`O₂: ${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
+					);
+					this.oxygenText.setColor(color);
+				}
 			} else if ("PlayerDied" in msg) {
 				if (msg.PlayerDied.entity_id === this.myEntityId) {
 					this.isDead = true;
-					this.healthText.setText("DEAD - Press R to Respawn");
+					this.healthText.setText(
+						"DEAD - Inventory Dropped!\nPress R to Respawn",
+					);
 					this.healthText.setColor("#ff0000");
+					this.inventoryItems = [];
+					this.inventoryText.setText("Inventory: []");
+					this.updateHotbarUI();
 				}
 				// Remove the dead entity sprite
 				const deadEnt = this.entities.get(msg.PlayerDied.entity_id);
@@ -432,6 +492,19 @@ export class OverworldScene extends Phaser.Scene {
 				this.flashText(
 					this.craftDeniedText,
 					`Craft denied: ${msg.CraftDenied.reason}`,
+					2000,
+				);
+			} else if ("TraderQuotes" in msg) {
+				this.traderQuotes = msg.TraderQuotes.quotes;
+			} else if ("CreditsChanged" in msg) {
+				this.factionCredits = msg.CreditsChanged.balance;
+				this.creditsText.setText(
+					`Credits: ${this.factionCredits.toLocaleString()}`,
+				);
+			} else if ("TradeFailed" in msg) {
+				this.flashText(
+					this.tradeFailedText,
+					`Trade failed: ${msg.TradeFailed.reason}`,
 					2000,
 				);
 			}
@@ -720,75 +793,142 @@ export class OverworldScene extends Phaser.Scene {
 		});
 	}
 
-	private openTradeUI(traderId: number): void {
-		// MVP: Simple alert / text overlay to simulate a Trade Dialog
-		if (this.isDead) return;
+	private tradeUIElements: Phaser.GameObjects.GameObject[] = [];
 
-		const uiBg = this.add.rectangle(
-			this.cameras.main.width / 2,
-			this.cameras.main.height / 2,
-			300,
-			200,
-			0x000000,
-			0.9,
-		);
+	private closeTradeUI(): void {
+		for (const el of this.tradeUIElements) {
+			el.destroy();
+		}
+		this.tradeUIElements = [];
+	}
+
+	private openTradeUI(traderId: number): void {
+		if (this.isDead) return;
+		this.closeTradeUI();
+
+		// Request fresh quotes when opening trade UI.
+		this.net.send("RequestTraderQuotes");
+
+		const cx = this.cameras.main.width / 2;
+		const cy = this.cameras.main.height / 2;
+		const panelW = 360;
+		const panelH = 420;
+
+		const uiBg = this.add.rectangle(cx, cy, panelW, panelH, 0x000000, 0.92);
 		uiBg.setStrokeStyle(2, 0x2ea043);
 		uiBg.setScrollFactor(0);
 		uiBg.setDepth(300);
+		this.tradeUIElements.push(uiBg);
 
 		const title = this.add
+			.text(cx, cy - panelH / 2 + 20, `TRADER E${traderId}`, {
+				fontSize: "16px",
+				color: "#2ea043",
+				fontFamily: "monospace",
+				fontStyle: "bold",
+			})
+			.setOrigin(0.5)
+			.setScrollFactor(0)
+			.setDepth(301);
+		this.tradeUIElements.push(title);
+
+		const creditsLabel = this.add
 			.text(
-				this.cameras.main.width / 2,
-				this.cameras.main.height / 2 - 80,
-				`Scrapper Colony Trader E${traderId}`,
+				cx,
+				cy - panelH / 2 + 42,
+				`Faction: ${this.factionCredits.toLocaleString()} CR`,
 				{
-					fontSize: "16px",
-					color: "#2ea043",
+					fontSize: "11px",
+					color: "#f0a000",
 					fontFamily: "monospace",
 				},
 			)
 			.setOrigin(0.5)
 			.setScrollFactor(0)
 			.setDepth(301);
+		this.tradeUIElements.push(creditsLabel);
 
-		const text = this.add
-			.text(
-				this.cameras.main.width / 2,
-				this.cameras.main.height / 2 - 20,
-				"Trade functionality\ncoming soon...",
-				{
-					fontSize: "14px",
+		// Filter quotes for this trader.
+		const quotes = this.traderQuotes.filter(
+			(q) => q.trader_entity_id === traderId,
+		);
+
+		let yOff = cy - panelH / 2 + 70;
+		for (const q of quotes) {
+			const itemLabel = this.add
+				.text(cx - panelW / 2 + 20, yOff, q.item.toUpperCase(), {
+					fontSize: "12px",
 					color: "#ffffff",
 					fontFamily: "monospace",
-					align: "center",
-				},
-			)
-			.setOrigin(0.5)
-			.setScrollFactor(0)
-			.setDepth(301);
+				})
+				.setScrollFactor(0)
+				.setDepth(301);
+			this.tradeUIElements.push(itemLabel);
+
+			const buyLabel = this.add
+				.text(cx - 30, yOff, `BUY ${Math.floor(q.sell_price)}`, {
+					fontSize: "11px",
+					color: "#58a6ff",
+					fontFamily: "monospace",
+					backgroundColor: "#1a2332",
+					padding: { x: 6, y: 2 },
+				})
+				.setOrigin(0.5)
+				.setScrollFactor(0)
+				.setDepth(301)
+				.setInteractive({ useHandCursor: true });
+			this.tradeUIElements.push(buyLabel);
+
+			buyLabel.on("pointerover", () => buyLabel.setColor("#ffffff"));
+			buyLabel.on("pointerout", () => buyLabel.setColor("#58a6ff"));
+			buyLabel.on("pointerdown", () => {
+				this.net.send({
+					BuyItem: { item: q.item, quantity: 1 },
+				});
+				buyLabel.setColor("#2ea043");
+				this.time.delayedCall(200, () => buyLabel.setColor("#58a6ff"));
+			});
+
+			const sellLabel = this.add
+				.text(cx + 70, yOff, `SELL ${Math.floor(q.buy_price)}`, {
+					fontSize: "11px",
+					color: "#2ea043",
+					fontFamily: "monospace",
+					backgroundColor: "#1a2332",
+					padding: { x: 6, y: 2 },
+				})
+				.setOrigin(0.5)
+				.setScrollFactor(0)
+				.setDepth(301)
+				.setInteractive({ useHandCursor: true });
+			this.tradeUIElements.push(sellLabel);
+
+			sellLabel.on("pointerover", () => sellLabel.setColor("#ffffff"));
+			sellLabel.on("pointerout", () => sellLabel.setColor("#2ea043"));
+			sellLabel.on("pointerdown", () => {
+				this.net.send({
+					SellItem: { item: q.item, quantity: 1 },
+				});
+				sellLabel.setColor("#58a6ff");
+				this.time.delayedCall(200, () => sellLabel.setColor("#2ea043"));
+			});
+
+			yOff += 28;
+		}
 
 		const closeBtn = this.add
-			.text(
-				this.cameras.main.width / 2,
-				this.cameras.main.height / 2 + 50,
-				"[ CLOSE ]",
-				{
-					fontSize: "14px",
-					color: "#ff4444",
-					fontFamily: "monospace",
-				},
-			)
+			.text(cx, cy + panelH / 2 - 25, "[ CLOSE ]", {
+				fontSize: "13px",
+				color: "#ff4444",
+				fontFamily: "monospace",
+			})
 			.setOrigin(0.5)
 			.setScrollFactor(0)
 			.setDepth(301)
 			.setInteractive({ useHandCursor: true });
+		this.tradeUIElements.push(closeBtn);
 
-		closeBtn.on("pointerdown", () => {
-			uiBg.destroy();
-			title.destroy();
-			text.destroy();
-			closeBtn.destroy();
-		});
+		closeBtn.on("pointerdown", () => this.closeTradeUI());
 	}
 
 	private getSelectedHotbarItem(): string | null {

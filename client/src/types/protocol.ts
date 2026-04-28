@@ -110,7 +110,9 @@ export type ClientMessage =
 	| { Chat: { channel: ChatChannel; text: string } }
 	| "RequestTraderQuotes"
 	| { InitiateRaid: { defender_faction_id: number } }
-	| { Mine: { target_entity_id: number | null } };
+	| { Mine: { target_entity_id: number | null } }
+	| { SellItem: { item: string; quantity: number } }
+	| { BuyItem: { item: string; quantity: number } };
 
 // ── Server → Client ──────────────────────────────────────────────────
 
@@ -132,6 +134,7 @@ export type ServerMessage =
 	  }
 	| { ZoneChanged: { zone: ZoneId } }
 	| { HealthChanged: { entity_id: number; health: number; max_health: number } }
+	| { OxygenChanged: { entity_id: number; current: number; max: number } }
 	| { PlayerDied: { entity_id: number } }
 	| { InventoryUpdated: { entity_id: number; items_json: string } }
 	| { SpawnProjectile: { entity_id: number; position: Vec2; velocity: Vec2 } }
@@ -167,4 +170,5 @@ export type ServerMessage =
 			};
 	  }
 	| { CraftDenied: { reason: string } }
+	| { TradeFailed: { reason: string } }
 	| { Disconnect: { reason: string } };
