@@ -624,8 +624,7 @@ async fn handle_event(
                             &ServerMessage::ChatMessage {
                                 from_entity_id: lithos_protocol::EntityId(0),
                                 channel: ChatChannel::Global,
-                                text: "You need a faction to enter an Asteroid Base."
-                                    .to_string(),
+                                text: "You need a faction to enter an Asteroid Base.".to_string(),
                                 sent_at_unix_ms: now_unix_ms(),
                             },
                         );
@@ -669,11 +668,10 @@ async fn handle_event(
                             };
 
                             if let Some(tt) = tile_type {
-                                let world_pos = Vec2::new(grid_x as f32 * 40.0, grid_y as f32 * 40.0);
-                                let id = sim
-                                    .world
-                                    .resource_mut::<EntityRegistry>()
-                                    .next_entity_id();
+                                let world_pos =
+                                    Vec2::new(grid_x as f32 * 40.0, grid_y as f32 * 40.0);
+                                let id =
+                                    sim.world.resource_mut::<EntityRegistry>().next_entity_id();
                                 let mut entity = sim.world.spawn((
                                     Position(world_pos),
                                     Zone(resolved_target),

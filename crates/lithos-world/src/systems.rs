@@ -173,11 +173,13 @@ pub fn combat_system(
                 velocity: proj_vel,
             });
 
-            combat_events.ammo_changes.push(crate::resources::AmmoChangedEvent {
-                entity_id: req.entity_id,
-                ammo: weapon.ammo,
-                max_ammo: weapon.max_ammo,
-            });
+            combat_events
+                .ammo_changes
+                .push(crate::resources::AmmoChangedEvent {
+                    entity_id: req.entity_id,
+                    ammo: weapon.ammo,
+                    max_ammo: weapon.max_ammo,
+                });
         }
     }
 }
@@ -459,11 +461,13 @@ pub fn life_support_system(
         if (o2.current - prev_o2).abs() > f32::EPSILON
             && let Some(&id) = registry.by_entity.get(&entity)
         {
-            combat_events.oxygen_changes.push(crate::resources::OxygenChangedEvent {
-                entity_id: id,
-                current: o2.current,
-                max: o2.max,
-            });
+            combat_events
+                .oxygen_changes
+                .push(crate::resources::OxygenChangedEvent {
+                    entity_id: id,
+                    current: o2.current,
+                    max: o2.max,
+                });
         }
     }
 }
