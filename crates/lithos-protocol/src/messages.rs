@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{
     ChatChannel, DynamicEventSnapshot, EntityId, EntitySnapshot, PlayerId, ProgressionSnapshot,
-    RaidStateSnapshot, TraderQuote, Vec2, ZoneId,
+    RaidStateSnapshot, SkillBranch, TraderQuote, Vec2, ZoneId,
 };
 
 // ---------------------------------------------------------------------------
@@ -82,6 +82,12 @@ pub enum ClientMessage {
 
     /// Attempt to initiate a raid against a defender faction.
     InitiateRaid { defender_faction_id: u64 },
+
+    /// Request to mine a resource node.
+    Mine {
+        /// Optional explicit target. If None, server auto-targets nearest node.
+        target_entity_id: Option<EntityId>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +187,20 @@ pub enum ServerMessage {
         /// Server timestamp (ms since epoch).
         server_timestamp: u64,
     },
+
+    /// A resource node was depleted and will despawn.
+    ResourceDepleted { entity_id: EntityId },
+
+    /// The player gained XP in a skill branch.
+    XpGained {
+        branch: SkillBranch,
+        amount: u32,
+        new_total: u32,
+        new_level: u32,
+    },
+
+    /// A crafting request was denied.
+    CraftDenied { reason: String },
 
     /// The server is kicking the client.
     Disconnect { reason: String },

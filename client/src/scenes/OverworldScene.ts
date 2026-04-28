@@ -66,6 +66,13 @@ export class OverworldScene extends Phaser.Scene {
 	private buildGhost!: Phaser.GameObjects.Rectangle;
 	private selectedStructure = "wall_segment";
 
+	// Hotbar state
+	private hotbarSlot = 0; // 0 = unarmed/fire, 1-9 = inventory items
+	private hotbarElements: Phaser.GameObjects.GameObject[] = [];
+	private xpText!: Phaser.GameObjects.Text;
+	private xpFlashText!: Phaser.GameObjects.Text;
+	private craftDeniedText!: Phaser.GameObjects.Text;
+
 	constructor() {
 		super({ key: "OverworldScene" });
 	}
@@ -187,7 +194,69 @@ export class OverworldScene extends Phaser.Scene {
 			this.buildKey = this.input.keyboard.addKey(
 				Phaser.Input.Keyboard.KeyCodes.B,
 			);
+			// Hotbar number keys 1-9
+			for (let i = 1; i <= 9; i++) {
+				this.input.keyboard
+					.addKey(
+						Phaser.Input.Keyboard.KeyCodes[
+							`${i}` as keyof typeof Phaser.Input.Keyboard.KeyCodes
+						],
+					)
+					.on("down", () => {
+						this.hotbarSlot = i;
+						this.updateHotbarUI();
+					});
+			}
+			// 0 key for unarmed/fire mode
+			this.input.keyboard
+				.addKey(Phaser.Input.Keyboard.KeyCodes.ZERO)
+				.on("down", () => {
+					this.hotbarSlot = 0;
+					this.updateHotbarUI();
+				});
 		}
+
+		// XP text
+		this.xpText = this.add
+			.text(10, 100, "XP: --", {
+				fontSize: "12px",
+				color: "#30a14e",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
+
+		this.xpFlashText = this.add
+			.text(
+				this.cameras.main.width / 2,
+				this.cameras.main.height / 2 - 50,
+				"",
+				{
+					fontSize: "16px",
+					color: "#2ea043",
+					fontFamily: "monospace",
+					fontStyle: "bold",
+				},
+			)
+			.setScrollFactor(0)
+			.setDepth(200)
+			.setOrigin(0.5);
+
+		this.craftDeniedText = this.add
+			.text(
+				this.cameras.main.width / 2,
+				this.cameras.main.height / 2 + 50,
+				"",
+				{
+					fontSize: "14px",
+					color: "#ff4444",
+					fontFamily: "monospace",
+					fontStyle: "bold",
+				},
+			)
+			.setScrollFactor(0)
+			.setDepth(200)
+			.setOrigin(0.5);
 
 		this.inventoryText = this.add
 			.text(
@@ -258,7 +327,30 @@ export class OverworldScene extends Phaser.Scene {
 			}
 
 			const myEntity = this.entities.get(this.myEntityId);
-			if (myEntity) {
+			if (!myEntity) return;
+
+			// Check if mining laser is selected in hotbar
+			const selectedItem = this.getSelectedHotbarItem();
+			if (selectedItem === "mining_laser") {
+				// Find nearest resource node as target
+				let nearestId: number | null = null;
+				let nearestDist = 1500.0 * 1500.0;
+				for (const [id, ent] of this.entities) {
+					if (id === this.myEntityId) continue;
+					const distSq =
+						(ent.sprite.x - myEntity.sprite.x) ** 2 +
+						(ent.sprite.y - myEntity.sprite.y) ** 2;
+					if (distSq < nearestDist) {
+						nearestDist = distSq;
+						nearestId = id;
+					}
+				}
+				this.net.send({
+					Mine: {
+						target_entity_id: nearestId,
+					},
+				});
+			} else {
 				const dx = worldPoint.x - myEntity.sprite.x;
 				const dy = worldPoint.y - myEntity.sprite.y;
 				this.net.send({
@@ -312,12 +404,40 @@ export class OverworldScene extends Phaser.Scene {
 						this.inventoryText.setText(
 							`Inventory: [${this.inventoryItems.join(", ")}]`,
 						);
+						this.updateHotbarUI();
 					} catch (e) {
 						console.error("Failed to parse inventory", e);
 					}
 				}
+			} else if ("ResourceDepleted" in msg) {
+				const ent = this.entities.get(msg.ResourceDepleted.entity_id);
+				if (ent) {
+					ent.sprite.destroy();
+					ent.label.destroy();
+					ent.facingLine?.destroy();
+					this.entities.delete(msg.ResourceDepleted.entity_id);
+				}
+			} else if ("XpGained" in msg) {
+				if (msg.XpGained.branch === "Extraction") {
+					this.xpText.setText(
+						`Extraction Lv.${msg.XpGained.new_level} (${msg.XpGained.new_total} XP)`,
+					);
+					this.flashText(
+						this.xpFlashText,
+						`+${msg.XpGained.amount} Extraction XP`,
+						3000,
+					);
+				}
+			} else if ("CraftDenied" in msg) {
+				this.flashText(
+					this.craftDeniedText,
+					`Craft denied: ${msg.CraftDenied.reason}`,
+					2000,
+				);
 			}
 		});
+
+		this.updateHotbarUI();
 	}
 
 	update(_time: number, delta: number): void {
@@ -668,6 +788,69 @@ export class OverworldScene extends Phaser.Scene {
 			title.destroy();
 			text.destroy();
 			closeBtn.destroy();
+		});
+	}
+
+	private getSelectedHotbarItem(): string | null {
+		if (this.hotbarSlot === 0) return null;
+		return this.inventoryItems[this.hotbarSlot - 1] ?? null;
+	}
+
+	private updateHotbarUI(): void {
+		// Clear old hotbar elements
+		for (const el of this.hotbarElements) {
+			el.destroy();
+		}
+		this.hotbarElements = [];
+
+		const slotSize = 40;
+		const spacing = 4;
+		const totalWidth = 9 * (slotSize + spacing);
+		const startX = (this.cameras.main.width - totalWidth) / 2 + slotSize / 2;
+		const y = this.cameras.main.height - 70;
+
+		for (let i = 0; i <= 9; i++) {
+			const x = startX + i * (slotSize + spacing);
+			const isSelected = this.hotbarSlot === i;
+			const bg = this.add.rectangle(x, y, slotSize, slotSize, 0x000000, 0.85);
+			bg.setStrokeStyle(isSelected ? 3 : 1, isSelected ? 0x58a6ff : 0x333333);
+			bg.setScrollFactor(0);
+			bg.setDepth(100);
+			this.hotbarElements.push(bg);
+
+			let labelText = i === 0 ? "🔫" : `${i}`;
+			if (i > 0 && i <= this.inventoryItems.length) {
+				const item = this.inventoryItems[i - 1];
+				// Show first 2 chars of item name as abbreviation
+				labelText = item.slice(0, 2).toUpperCase();
+			}
+
+			const label = this.add
+				.text(x, y, labelText, {
+					fontSize: "11px",
+					color: isSelected ? "#58a6ff" : "#888888",
+					fontFamily: "monospace",
+				})
+				.setOrigin(0.5)
+				.setScrollFactor(0)
+				.setDepth(101);
+			this.hotbarElements.push(label);
+		}
+	}
+
+	private flashText(
+		textObj: Phaser.GameObjects.Text,
+		message: string,
+		durationMs: number,
+	): void {
+		textObj.setText(message);
+		textObj.setAlpha(1);
+		this.tweens.killTweensOf(textObj);
+		this.tweens.add({
+			targets: textObj,
+			alpha: 0,
+			duration: durationMs,
+			ease: "Power2",
 		});
 	}
 

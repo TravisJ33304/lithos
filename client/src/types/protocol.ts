@@ -109,7 +109,8 @@ export type ClientMessage =
 	| { Ping: { timestamp: number } }
 	| { Chat: { channel: ChatChannel; text: string } }
 	| "RequestTraderQuotes"
-	| { InitiateRaid: { defender_faction_id: number } };
+	| { InitiateRaid: { defender_faction_id: number } }
+	| { Mine: { target_entity_id: number | null } };
 
 // ── Server → Client ──────────────────────────────────────────────────
 
@@ -156,4 +157,14 @@ export type ServerMessage =
 	| { RaidStarted: { raid: RaidStateSnapshot } }
 	| { RaidEnded: { raid: RaidStateSnapshot; attacker_won: boolean } }
 	| { Pong: { client_timestamp: number; server_timestamp: number } }
+	| { ResourceDepleted: { entity_id: number } }
+	| {
+			XpGained: {
+				branch: SkillBranch;
+				amount: number;
+				new_total: number;
+				new_level: number;
+			};
+	  }
+	| { CraftDenied: { reason: string } }
 	| { Disconnect: { reason: string } };

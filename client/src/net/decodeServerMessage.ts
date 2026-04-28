@@ -478,6 +478,46 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				>["Pong"],
 			};
 		}
+		case "ResourceDepleted": {
+			if (Array.isArray(payload) && payload.length >= 1) {
+				return { ResourceDepleted: { entity_id: asNumber(payload[0]) } };
+			}
+			return {
+				ResourceDepleted: payload as unknown as Extract<
+					ServerMessage,
+					{ ResourceDepleted: unknown }
+				>["ResourceDepleted"],
+			};
+		}
+		case "XpGained": {
+			if (Array.isArray(payload) && payload.length >= 4) {
+				return {
+					XpGained: {
+						branch: normalizeSkillBranch(payload[0]),
+						amount: asNumber(payload[1]),
+						new_total: asNumber(payload[2]),
+						new_level: asNumber(payload[3]),
+					},
+				};
+			}
+			return {
+				XpGained: payload as unknown as Extract<
+					ServerMessage,
+					{ XpGained: unknown }
+				>["XpGained"],
+			};
+		}
+		case "CraftDenied": {
+			if (Array.isArray(payload)) {
+				return { CraftDenied: { reason: singleStringArray(payload) } };
+			}
+			return {
+				CraftDenied: payload as unknown as Extract<
+					ServerMessage,
+					{ CraftDenied: unknown }
+				>["CraftDenied"],
+			};
+		}
 		case "Disconnect": {
 			if (Array.isArray(payload)) {
 				return { Disconnect: { reason: singleStringArray(payload) } };

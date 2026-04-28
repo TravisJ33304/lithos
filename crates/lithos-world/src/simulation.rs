@@ -37,6 +37,8 @@ impl Simulation {
         world.insert_resource(ProgressionQueue::default());
         world.insert_resource(TraderMarket::default());
         world.insert_resource(FactionVaults::default());
+        world.insert_resource(MineQueue::default());
+        world.insert_resource(MiningEvents::default());
 
         // Build the per-tick schedule.
         let mut schedule = Schedule::default();
@@ -57,6 +59,7 @@ impl Simulation {
                 systems::item_pickup_system,
                 systems::npc_ai_system,
                 systems::trader_market_system,
+                systems::mining_system,
                 systems::progression_system,
                 systems::dynamic_events_system,
                 systems::raid_state_system,

@@ -4,13 +4,14 @@ use bevy_ecs::prelude::*;
 
 use crate::components::{
     Collider, Dead, Health, Inventory, Item, Npc, NpcState, NpcType, Player, Position,
-    PositionHistory, Progression, Projectile, Velocity, Weapon, Zone,
+    PositionHistory, Progression, Projectile, ResourceNode, ResourceType, Velocity, Weapon, Zone,
 };
 use crate::resources::{
     ActiveDynamicEvents, CombatEvents, DynamicEventBus, EntityRegistry, FactionVaults,
-    HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq, PlayerDiedEvent,
-    ProgressionQueue, ProgressionUpdatedEvent, RaidEventBus, RaidStateStore, SimConfig,
-    SpawnProjectileEvent, TickCounter, TraderMarket, ZoneChangeEvent, ZoneChangeEvents,
+    HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq, MineQueue,
+    MiningEvent, MiningEvents, PlayerDiedEvent, ProgressionQueue, ProgressionUpdatedEvent,
+    RaidEventBus, RaidStateStore, SimConfig, SpawnProjectileEvent, TickCounter, TraderMarket,
+    XpGainRequest, ZoneChangeEvent, ZoneChangeEvents,
 };
 
 /// Advance the tick counter.
@@ -589,14 +590,129 @@ fn xp_to_next_level(level: u32) -> u32 {
     100 + (level.saturating_sub(1) * 50)
 }
 
+/// Process mining requests: check tool, find target, extract resources.
+#[allow(clippy::type_complexity)]
+pub fn mining_system(
+    mut mine_queue: ResMut<MineQueue>,
+    mut mining_events: ResMut<MiningEvents>,
+    registry: Res<EntityRegistry>,
+    mut players: Query<(&mut Inventory, &Position, &Zone), (With<Player>, Without<Dead>)>,
+    mut resources: Query<(Entity, &mut ResourceNode, &Position, &Zone), Without<Dead>>,
+) {
+    mining_events.events.clear();
+    mining_events.depleted.clear();
+
+    const MINING_RANGE: f32 = 150.0;
+    const XP_PER_UNIT: u32 = 5;
+
+    for req in mine_queue.requests.drain(..) {
+        let Some(&miner_ecs) = registry.by_id.get(&req.entity_id) else {
+            continue;
+        };
+
+        let Ok((mut inventory, miner_pos, miner_zone)) = players.get_mut(miner_ecs) else {
+            continue;
+        };
+
+        // Must have a mining laser in inventory.
+        if !inventory.items.iter().any(|item| item == "mining_laser") {
+            continue;
+        }
+
+        // Find target resource node.
+        let mut target: Option<(bevy_ecs::entity::Entity, f32)> = None;
+
+        if let Some(tid) = req.target_entity_id {
+            // Explicit target.
+            if let Some(&t_ecs) = registry.by_id.get(&tid)
+                && let Ok((_, _, t_pos, t_zone)) = resources.get(t_ecs)
+                && t_zone.0 == miner_zone.0
+            {
+                let dist_sq = (miner_pos.0 - t_pos.0).length_squared();
+                if dist_sq <= MINING_RANGE * MINING_RANGE {
+                    target = Some((t_ecs, dist_sq));
+                }
+            }
+        }
+
+        // If no explicit target or out of range, find nearest.
+        if target.is_none() {
+            let mut nearest_dist_sq = MINING_RANGE * MINING_RANGE;
+            let mut nearest: Option<bevy_ecs::entity::Entity> = None;
+
+            for (res_ent, _res_node, res_pos, res_zone) in resources.iter_mut() {
+                if res_zone.0 != miner_zone.0 {
+                    continue;
+                }
+                let dist_sq = (miner_pos.0 - res_pos.0).length_squared();
+                if dist_sq < nearest_dist_sq {
+                    nearest_dist_sq = dist_sq;
+                    nearest = Some(res_ent);
+                }
+            }
+
+            if let Some(n) = nearest {
+                target = Some((n, nearest_dist_sq));
+            }
+        }
+
+        let Some((target_ecs, _)) = target else {
+            continue;
+        };
+
+        let Ok((_, mut node, _, _)) = resources.get_mut(target_ecs) else {
+            continue;
+        };
+
+        if node.yield_amount == 0 {
+            continue;
+        }
+
+        // Extract 1 unit per tick.
+        node.yield_amount -= 1;
+        let item_name = match node.resource_type {
+            ResourceType::Iron => "iron",
+            ResourceType::Titanium => "titanium",
+            ResourceType::Lithos => "lithos",
+        };
+        inventory.items.push(item_name.to_string());
+
+        if let Some(&res_id) = registry.by_entity.get(&target_ecs) {
+            mining_events.events.push(MiningEvent {
+                miner_entity_id: req.entity_id,
+                resource_entity_id: res_id,
+                item_gained: item_name.to_string(),
+                amount: 1,
+                xp_gained: XP_PER_UNIT,
+            });
+        }
+
+        if node.yield_amount == 0
+            && let Some(&res_id) = registry.by_entity.get(&target_ecs)
+        {
+            mining_events.depleted.push(res_id);
+        }
+    }
+}
+
 /// Apply queued XP gains and emit progression updates for clients.
 pub fn progression_system(
     mut queue: ResMut<ProgressionQueue>,
+    mut mining_events: ResMut<MiningEvents>,
     mut combat_events: ResMut<CombatEvents>,
     registry: Res<EntityRegistry>,
     mut players: Query<&mut Progression, Without<Dead>>,
 ) {
     combat_events.progression_updates.clear();
+
+    // Convert mining events into Extraction XP.
+    for event in mining_events.events.drain(..) {
+        queue.gains.push(XpGainRequest {
+            entity_id: event.miner_entity_id,
+            branch: lithos_protocol::SkillBranch::Extraction,
+            amount: event.xp_gained,
+        });
+    }
 
     for gain in queue.gains.drain(..) {
         let Some(&ecs_entity) = registry.by_id.get(&gain.entity_id) else {

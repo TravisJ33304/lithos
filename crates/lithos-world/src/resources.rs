@@ -253,6 +253,36 @@ pub struct ProgressionQueue {
     pub gains: Vec<XpGainRequest>,
 }
 
+/// A pending mining request from a client.
+#[derive(Debug, Clone)]
+pub struct MineRequest {
+    pub entity_id: EntityId,
+    pub target_entity_id: Option<EntityId>,
+}
+
+/// Queue of mining inputs to be processed this tick.
+#[derive(Resource, Debug, Default)]
+pub struct MineQueue {
+    pub requests: Vec<MineRequest>,
+}
+
+/// Event emitted when a resource node is mined.
+#[derive(Debug, Clone)]
+pub struct MiningEvent {
+    pub miner_entity_id: EntityId,
+    pub resource_entity_id: EntityId,
+    pub item_gained: String,
+    pub amount: u32,
+    pub xp_gained: u32,
+}
+
+/// Events emitted this tick from mining activity.
+#[derive(Resource, Debug, Default)]
+pub struct MiningEvents {
+    pub events: Vec<MiningEvent>,
+    pub depleted: Vec<EntityId>,
+}
+
 /// Trader market simulation state.
 #[derive(Resource, Debug, Default)]
 pub struct TraderMarket {

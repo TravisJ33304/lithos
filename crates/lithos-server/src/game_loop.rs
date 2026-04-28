@@ -401,6 +401,7 @@ pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> Result<()> {
 
         send_zone_changes(&mut sim, &connections);
         send_combat_events(&mut sim, &connections);
+        send_mining_events(&mut sim, &connections);
         send_chat_events(&mut sim, &connections);
         send_dynamic_events(&mut sim, &connections);
         send_raid_events(&mut sim, &connections);
@@ -627,6 +628,15 @@ async fn handle_event(
                     .respawns
                     .push(RespawnRequest { entity_id });
             }
+            ClientMessage::Mine { target_entity_id } => {
+                sim.world
+                    .resource_mut::<lithos_world::resources::MineQueue>()
+                    .requests
+                    .push(lithos_world::resources::MineRequest {
+                        entity_id,
+                        target_entity_id,
+                    });
+            }
             ClientMessage::Ping { timestamp } => {
                 send_to_entity(
                     connections,
@@ -650,6 +660,35 @@ async fn handle_event(
                 else {
                     return Ok(());
                 };
+
+                // Check skill level requirement.
+                let has_level = {
+                    let entity_ref = sim.world.entity(ecs_entity);
+                    if let Some(progression) = entity_ref.get::<Progression>() {
+                        progression
+                            .branches
+                            .get(&recipe_def.required_branch)
+                            .map(|b| b.level >= recipe_def.required_level)
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                };
+
+                if !has_level {
+                    send_to_entity(
+                        connections,
+                        entity_id,
+                        &ServerMessage::CraftDenied {
+                            reason: format!(
+                                "requires {:?} level {}",
+                                recipe_def.required_branch,
+                                recipe_def.required_level
+                            ),
+                        },
+                    );
+                    return Ok(());
+                }
 
                 let inv_items = {
                     let entity_ref = sim.world.entity(ecs_entity);
@@ -1167,6 +1206,56 @@ fn send_combat_events(sim: &mut Simulation, connections: &ConnectionManager) {
                 branches: event.branches.clone(),
             },
         );
+    }
+}
+
+fn send_mining_events(sim: &mut Simulation, connections: &ConnectionManager) {
+    let (mining_events, depleted) = {
+        let events = sim
+            .world
+            .resource::<lithos_world::resources::MiningEvents>();
+        (events.events.clone(), events.depleted.clone())
+    };
+
+    for event in &mining_events {
+        // Send inventory update.
+        if let Some(&ecs_entity) = sim
+            .world
+            .resource::<EntityRegistry>()
+            .by_id
+            .get(&event.miner_entity_id)
+            && let Some(inv) = sim.world.entity(ecs_entity).get::<Inventory>()
+        {
+            send_to_entity(
+                connections,
+                event.miner_entity_id,
+                &ServerMessage::InventoryUpdated {
+                    entity_id: event.miner_entity_id,
+                    items_json: serde_json::to_string(&inv.items)
+                        .unwrap_or_else(|_| "[]".to_string()),
+                },
+            );
+        }
+    }
+
+    // Broadcast depleted nodes to all clients.
+    for entity_id in &depleted {
+        broadcast_all(
+            connections,
+            &ServerMessage::ResourceDepleted {
+                entity_id: *entity_id,
+            },
+        );
+    }
+
+    // Despawn depleted resource nodes.
+    for entity_id in depleted {
+        if let Some(&ecs_entity) = sim.world.resource::<EntityRegistry>().by_id.get(&entity_id) {
+            sim.world
+                .resource_mut::<EntityRegistry>()
+                .unregister(entity_id);
+            sim.world.despawn(ecs_entity);
+        }
     }
 }
 
