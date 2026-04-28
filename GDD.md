@@ -1,4 +1,4 @@
-# Lithos - Software Requirements Specification (SRS)
+# Lithos - Game Design Document (GDD)
 
 **Genre:** Top-down multiplayer survival crafting
 **Perspective:** 2D Vector Art
@@ -76,6 +76,28 @@ The backend is split into two distinct tiers to ensure stability and scalability
   * *Life Support:* If power is cut, bases lose Oxygen. Players inside without spacesuits suffer asphyxiation damage.
   * *Hydroponics:* Used to grow biological materials for crafting.
 * **Automation (Stretch Goal):** Craftable drones (Logistics, Agri, Defense) to automate base tasks and sorting.
+
+## 7. The Automata (PvE Threats)
+
+The primary PvE antagonists are a faction of rogue, self-replicating robots. They scale in difficulty toward the map's center.
+
+### 7.1 Enemy Types & Roles
+
+* **Rovers:** Light, fast-moving wheeled or tracked units. They attack in swarms, relying on melee strikes or kamikaze explosions. Primarily found in the Outer Rim.
+* **Drones:** Flying utility units. They can bypass ground obstacles and walls. Typically armed with light continuous lasers. They often accompany larger units to provide air support.
+* **Walkers (Humanoid/Bipedal):** The backbone of the Automata forces. They utilize cover and pathfinding. Variants include:
+  * *Assault Walkers:* Armed with shotguns or rapid-fire lasers; aggressive pushers.
+  * *Sniper Walkers:* Armed with railguns; engage from long distances and attempt to kite players.
+  * *Heavy Flamethrower Walkers:* Heavily armored; devastating at close range and capable of setting areas (and players) on fire, causing damage-over-time.
+* **Heavy Siege Units (Tanks/Mechs):** Slow, massive targets found in the Mid-Zone and Core. Require coordinated faction efforts or heavy explosives to take down. They fire slow-moving, high-damage artillery shells.
+* **The Core Wardens (Bosses):** Massive, unique bosses located at the center of the Overworld. They possess multiple attack phases, area-of-effect (AoE) abilities, and spawn adds. Defeating a Warden guarantees high-tier components needed for end-game automation or breaching.
+
+### 7.2 AI & Behavior States
+
+* **Idle/Patrol:** Moving along a defined path or guarding a specific POI.
+* **Investigate:** Triggered by player noise (gunfire, mining) or taking damage from an unseen source.
+* **Combat:** Active engagement, utilizing cover (Walkers) or swarm tactics (Rovers).
+* **Retreat/Repair:** Some advanced units will attempt to flee to a nearby Automata structure to regenerate health if severely damaged.
 
 ## 7. The Raid Mechanic (Online-Only)
 
