@@ -39,6 +39,8 @@ pub struct Weapon {
     pub projectile_speed: f32,
     pub cooldown_seconds: f32,
     pub last_fired_time: f64, // using standard seconds timestamp
+    pub ammo: u32,
+    pub max_ammo: u32,
 }
 
 /// Marks an entity as a projectile.

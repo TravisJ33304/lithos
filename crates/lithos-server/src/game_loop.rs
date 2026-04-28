@@ -213,6 +213,8 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                     projectile_speed: 400.0,
                     cooldown_seconds: 1.0,
                     last_fired_time: 0.0,
+                    ammo: 30,
+                    max_ammo: 30,
                 },
                 Collider { radius: 14.0 },
                 Inventory {
@@ -550,6 +552,8 @@ async fn handle_event(
                             projectile_speed: 600.0,
                             cooldown_seconds: 0.5,
                             last_fired_time: 0.0,
+                            ammo: 50,
+                            max_ammo: 50,
                         },
                         Collider { radius: 14.0 },
                         Inventory {
@@ -1348,6 +1352,18 @@ fn send_combat_events(sim: &mut Simulation, connections: &ConnectionManager) {
             &ServerMessage::ProgressionUpdated {
                 entity_id: event.entity_id,
                 branches: event.branches.clone(),
+            },
+        );
+    }
+
+    for event in &events.ammo_changes {
+        send_to_entity(
+            connections,
+            event.entity_id,
+            &ServerMessage::AmmoChanged {
+                entity_id: event.entity_id,
+                ammo: event.ammo,
+                max_ammo: event.max_ammo,
             },
         );
     }

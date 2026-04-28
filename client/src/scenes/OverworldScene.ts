@@ -84,6 +84,18 @@ export class OverworldScene extends Phaser.Scene {
 	private maxOxygen = 100;
 	private oxygenText!: Phaser.GameObjects.Text;
 
+	// Weapon state
+	private currentAmmo = 0;
+	private maxAmmo = 0;
+	private ammoText!: Phaser.GameObjects.Text;
+
+	// Chat state
+	private chatMessages: Array<{ from: string; text: string; color: string }> =
+		[];
+	private chatVisible = false;
+	private chatElements: Phaser.GameObjects.GameObject[] = [];
+	private chatInput = "";
+
 	constructor() {
 		super({ key: "OverworldScene" });
 	}
@@ -225,6 +237,18 @@ export class OverworldScene extends Phaser.Scene {
 					this.hotbarSlot = 0;
 					this.updateHotbarUI();
 				});
+
+			// Chat typing input.
+			this.input.keyboard.on("keydown", (event: KeyboardEvent) => {
+				if (!this.chatVisible) return;
+				if (event.key === "Enter") return; // handled by toggleChat
+				if (event.key === "Backspace") {
+					this.chatInput = this.chatInput.slice(0, -1);
+				} else if (event.key.length === 1 && this.chatInput.length < 100) {
+					this.chatInput += event.key;
+				}
+				this.renderChatUI();
+			});
 		}
 
 		// XP text
@@ -298,6 +322,15 @@ export class OverworldScene extends Phaser.Scene {
 			.text(10, 132, "O₂: 100/100", {
 				fontSize: "12px",
 				color: "#58a6ff",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(100);
+
+		this.ammoText = this.add
+			.text(10, 148, "Ammo: --", {
+				fontSize: "12px",
+				color: "#ffaa00",
 				fontFamily: "monospace",
 			})
 			.setScrollFactor(0)
@@ -507,6 +540,25 @@ export class OverworldScene extends Phaser.Scene {
 					`Trade failed: ${msg.TradeFailed.reason}`,
 					2000,
 				);
+			} else if ("AmmoChanged" in msg) {
+				if (msg.AmmoChanged.entity_id === this.myEntityId) {
+					this.currentAmmo = msg.AmmoChanged.ammo;
+					this.maxAmmo = msg.AmmoChanged.max_ammo;
+					this.ammoText.setText(`Ammo: ${this.currentAmmo}/${this.maxAmmo}`);
+					if (this.currentAmmo === 0) {
+						this.ammoText.setColor("#ff4444");
+					} else {
+						this.ammoText.setColor("#ffaa00");
+					}
+				}
+			} else if ("ChatMessage" in msg) {
+				const channel = msg.ChatMessage.channel;
+				const color = channel === "Faction" ? "#2ea043" : "#8b949e";
+				const from =
+					msg.ChatMessage.from_entity_id === 0
+						? "SYSTEM"
+						: `E${msg.ChatMessage.from_entity_id}`;
+				this.addChatMessage(from, msg.ChatMessage.text, color);
 			}
 		});
 
@@ -598,6 +650,16 @@ export class OverworldScene extends Phaser.Scene {
 			this.buildMode = !this.buildMode;
 			this.buildGhost.setVisible(this.buildMode);
 			this.crosshair.setVisible(!this.buildMode);
+		}
+
+		// Chat toggle on Enter.
+		if (
+			this.input.keyboard &&
+			Phaser.Input.Keyboard.JustDown(
+				this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER),
+			)
+		) {
+			this.toggleChat();
 		}
 
 		// --- Interpolation & Updates ---
@@ -791,6 +853,88 @@ export class OverworldScene extends Phaser.Scene {
 			targetX: entity.position.x,
 			targetY: entity.position.y,
 		});
+	}
+
+	private toggleChat(): void {
+		if (this.chatVisible) {
+			// Send message if there's text.
+			if (this.chatInput.trim().length > 0) {
+				this.net.send({
+					Chat: { channel: "Global", text: this.chatInput.trim() },
+				});
+			}
+			this.chatInput = "";
+			this.chatVisible = false;
+			for (const el of this.chatElements) {
+				el.destroy();
+			}
+			this.chatElements = [];
+		} else {
+			this.chatVisible = true;
+			this.renderChatUI();
+		}
+	}
+
+	private addChatMessage(from: string, text: string, color: string): void {
+		this.chatMessages.push({ from, text, color });
+		if (this.chatMessages.length > 50) {
+			this.chatMessages.shift();
+		}
+		if (this.chatVisible) {
+			this.renderChatUI();
+		}
+	}
+
+	private renderChatUI(): void {
+		for (const el of this.chatElements) {
+			el.destroy();
+		}
+		this.chatElements = [];
+
+		const cx = 20;
+		const cy = this.cameras.main.height - 200;
+		const panelW = 400;
+		const panelH = 160;
+
+		const bg = this.add.rectangle(
+			cx + panelW / 2,
+			cy + panelH / 2,
+			panelW,
+			panelH,
+			0x000000,
+			0.85,
+		);
+		bg.setStrokeStyle(1, 0x333333);
+		bg.setScrollFactor(0);
+		bg.setDepth(200);
+		this.chatElements.push(bg);
+
+		let yOff = cy + panelH - 10;
+		const recent = this.chatMessages.slice(-6);
+		for (let i = recent.length - 1; i >= 0; i--) {
+			const msg = recent[i];
+			const line = this.add
+				.text(cx + 10, yOff, `[${msg.from}] ${msg.text}`, {
+					fontSize: "11px",
+					color: msg.color,
+					fontFamily: "monospace",
+					wordWrap: { width: panelW - 20 },
+				})
+				.setScrollFactor(0)
+				.setDepth(201);
+			this.chatElements.push(line);
+			yOff -= 18;
+		}
+
+		const inputLine = this.add
+			.text(cx + 10, cy + panelH + 5, `> ${this.chatInput}_`, {
+				fontSize: "12px",
+				color: "#ffffff",
+				fontFamily: "monospace",
+			})
+			.setScrollFactor(0)
+			.setDepth(201);
+		this.chatElements.push(inputLine);
 	}
 
 	private tradeUIElements: Phaser.GameObjects.GameObject[] = [];

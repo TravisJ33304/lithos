@@ -124,13 +124,16 @@ pub fn combat_system(
 
     // Clear old events
     combat_events.spawn_projectiles.clear();
+    combat_events.ammo_changes.clear();
 
     for req in input_queue.fires.drain(..) {
         if let Some(&ecs_entity) = registry.by_id.get(&req.entity_id)
             && let Ok((pos, mut weapon, zone)) = query.get_mut(ecs_entity)
             && current_time >= weapon.last_fired_time + weapon.cooldown_seconds as f64
+            && weapon.ammo > 0
         {
             weapon.last_fired_time = current_time;
+            weapon.ammo -= 1;
 
             let dir = req.direction.normalize();
             if dir.x == 0.0 && dir.y == 0.0 {
@@ -168,6 +171,12 @@ pub fn combat_system(
                 entity_id: new_id,
                 position: proj_pos,
                 velocity: proj_vel,
+            });
+
+            combat_events.ammo_changes.push(crate::resources::AmmoChangedEvent {
+                entity_id: req.entity_id,
+                ammo: weapon.ammo,
+                max_ammo: weapon.max_ammo,
             });
         }
     }

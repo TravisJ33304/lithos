@@ -171,4 +171,5 @@ export type ServerMessage =
 	  }
 	| { CraftDenied: { reason: string } }
 	| { TradeFailed: { reason: string } }
+	| { AmmoChanged: { entity_id: number; ammo: number; max_ammo: number } }
 	| { Disconnect: { reason: string } };

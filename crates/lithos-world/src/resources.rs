@@ -181,6 +181,14 @@ pub struct CombatEvents {
     pub inventory_updates: Vec<InventoryUpdatedEvent>,
     pub credits_changes: Vec<CreditsChangedEvent>,
     pub progression_updates: Vec<ProgressionUpdatedEvent>,
+    pub ammo_changes: Vec<AmmoChangedEvent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AmmoChangedEvent {
+    pub entity_id: EntityId,
+    pub ammo: u32,
+    pub max_ammo: u32,
 }
 
 /// Chat line staged by the server layer to fan-out.

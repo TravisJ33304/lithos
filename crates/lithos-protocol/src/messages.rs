@@ -228,6 +228,13 @@ pub enum ServerMessage {
     /// A trade transaction failed.
     TradeFailed { reason: String },
 
+    /// Weapon ammo count changed.
+    AmmoChanged {
+        entity_id: EntityId,
+        ammo: u32,
+        max_ammo: u32,
+    },
+
     /// The server is kicking the client.
     Disconnect { reason: String },
 }

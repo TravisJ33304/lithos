@@ -546,6 +546,23 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				>["TradeFailed"],
 			};
 		}
+		case "AmmoChanged": {
+			if (Array.isArray(payload) && payload.length >= 3) {
+				return {
+					AmmoChanged: {
+						entity_id: asNumber(payload[0]),
+						ammo: asNumber(payload[1]),
+						max_ammo: asNumber(payload[2]),
+					},
+				};
+			}
+			return {
+				AmmoChanged: payload as unknown as Extract<
+					ServerMessage,
+					{ AmmoChanged: unknown }
+				>["AmmoChanged"],
+			};
+		}
 		case "Disconnect": {
 			if (Array.isArray(payload)) {
 				return { Disconnect: { reason: singleStringArray(payload) } };
