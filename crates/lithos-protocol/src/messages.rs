@@ -211,6 +211,13 @@ pub enum ServerMessage {
         server_timestamp: u64,
     },
 
+    /// A chunk of the overworld tilemap.
+    WorldMapChunk {
+        chunk_x: i32,
+        chunk_y: i32,
+        tiles: Vec<crate::types::TileData>,
+    },
+
     /// A resource node was depleted and will despawn.
     ResourceDepleted { entity_id: EntityId },
 

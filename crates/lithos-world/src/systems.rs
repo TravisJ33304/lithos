@@ -658,8 +658,12 @@ pub fn trader_market_system(
 
             for (item, base_price) in [
                 ("iron", 10.0_f32),
+                ("copper", 12.0_f32),
+                ("silica", 15.0_f32),
+                ("biomass", 8.0_f32),
                 ("titanium", 22.0_f32),
-                ("lithos", 80.0_f32),
+                ("uranium", 60.0_f32),
+                ("plutonium", 75.0_f32),
                 ("medkit", 45.0_f32),
             ] {
                 market.quotes.push(crate::economy::TraderMarketState {
@@ -774,8 +778,11 @@ pub fn mining_system(
         node.yield_amount -= 1;
         let item_name = match node.resource_type {
             ResourceType::Iron => "iron",
-            ResourceType::Titanium => "titanium",
-            ResourceType::Lithos => "lithos",
+            ResourceType::Copper => "copper",
+            ResourceType::Silica => "silica",
+            ResourceType::Uranium => "uranium",
+            ResourceType::Plutonium => "plutonium",
+            ResourceType::BioMass => "biomass",
         };
         inventory.items.push(item_name.to_string());
 

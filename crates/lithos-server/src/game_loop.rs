@@ -25,6 +25,7 @@ use lithos_world::resources::{
     SimConfig, TraderMarket, XpGainRequest, ZoneChangeEvents, ZoneTransferRequest,
 };
 use lithos_world::simulation::Simulation;
+use lithos_world::tilemap::{ChunkCoord, TileMap};
 use lithos_world::world_gen::{Biome, WorldGenerator};
 
 use crate::ServerConfig;
@@ -176,17 +177,43 @@ fn raid_snapshot(raid: &RaidState, tick: u64, dt: f32) -> RaidStateSnapshot {
 }
 
 fn seed_world(sim: &mut Simulation, world_seed: u32) {
+    use lithos_world::components::{CommsArray, FabricationPlant, SalvageSite};
+    use lithos_world::tilemap::{CHUNK_WORLD_SIZE, TerrainType as TileTerrain};
+
     let mut rng = rand::thread_rng();
     let generator = WorldGenerator::new(world_seed);
 
-    // Hostiles
+    // Pre-generate chunks covering the full world area so we can query terrain.
+    let world_half = 2000.0;
+    let max_chunk = (world_half / CHUNK_WORLD_SIZE).ceil() as i32;
+    {
+        let mut tilemap = sim.world.resource_mut::<TileMap>();
+        for cy in -max_chunk..=max_chunk {
+            for cx in -max_chunk..=max_chunk {
+                tilemap.ensure_chunk(ChunkCoord { x: cx, y: cy });
+            }
+        }
+    }
+
+    // ── Hostiles ─────────────────────────────────────────────────────────────
     for _ in 0..100 {
         let pos = Vec2::new(
-            rng.gen_range(-4000.0..4000.0),
-            rng.gen_range(-4000.0..4000.0),
+            rng.gen_range(-world_half..world_half),
+            rng.gen_range(-world_half..world_half),
         );
         let biome = generator.get_biome(pos);
         if biome == Biome::OuterRim {
+            continue;
+        }
+
+        let passable = {
+            let tilemap = sim.world.resource::<TileMap>();
+            tilemap
+                .get_tile_loaded(pos)
+                .map(|t| t.is_ground_passable())
+                .unwrap_or(false)
+        };
+        if !passable {
             continue;
         }
 
@@ -227,14 +254,25 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
             .register(npc_id, ecs_ent);
     }
 
-    // Traders
+    // ── Traders ──────────────────────────────────────────────────────────────
     for _ in 0..20 {
         let pos = Vec2::new(
-            rng.gen_range(-4000.0..4000.0),
-            rng.gen_range(-4000.0..4000.0),
+            rng.gen_range(-world_half..world_half),
+            rng.gen_range(-world_half..world_half),
         );
         let biome = generator.get_biome(pos);
         if biome == Biome::Core {
+            continue;
+        }
+
+        let passable = {
+            let tilemap = sim.world.resource::<TileMap>();
+            tilemap
+                .get_tile_loaded(pos)
+                .map(|t| t.is_ground_passable())
+                .unwrap_or(false)
+        };
+        if !passable {
             continue;
         }
 
@@ -266,47 +304,293 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
             .register(npc_id, ecs_ent);
     }
 
-    // Resource nodes
-    for _ in 0..200 {
+    // ── Resource Nodes (terrain-aware vein spawning) ──────────────────────────
+    let mut next_vein_id: u32 = 1;
+
+    spawn_resource_veins(
+        sim,
+        &mut rng,
+        &generator,
+        ResourceType::Iron,
+        80,
+        8..15,
+        |tile: &lithos_world::tilemap::Tile| {
+            matches!(tile.terrain, TileTerrain::Rock | TileTerrain::DeepRavine)
+        },
+        |biome| matches!(biome, Biome::OuterRim | Biome::MidZone),
+        &mut next_vein_id,
+    );
+
+    spawn_resource_veins(
+        sim,
+        &mut rng,
+        &generator,
+        ResourceType::Copper,
+        60,
+        6..12,
+        |tile: &lithos_world::tilemap::Tile| matches!(tile.terrain, TileTerrain::Rock),
+        |biome| matches!(biome, Biome::OuterRim | Biome::MidZone),
+        &mut next_vein_id,
+    );
+
+    spawn_resource_veins(
+        sim,
+        &mut rng,
+        &generator,
+        ResourceType::Silica,
+        50,
+        6..12,
+        |tile: &lithos_world::tilemap::Tile| matches!(tile.terrain, TileTerrain::AsteroidField),
+        |biome| matches!(biome, Biome::MidZone),
+        &mut next_vein_id,
+    );
+
+    spawn_resource_veins(
+        sim,
+        &mut rng,
+        &generator,
+        ResourceType::Uranium,
+        30,
+        5..10,
+        |tile: &lithos_world::tilemap::Tile| {
+            matches!(
+                tile.terrain,
+                TileTerrain::DeepRavine | TileTerrain::AutomataSpire
+            )
+        },
+        |biome| matches!(biome, Biome::MidZone | Biome::Core),
+        &mut next_vein_id,
+    );
+
+    spawn_resource_veins(
+        sim,
+        &mut rng,
+        &generator,
+        ResourceType::Plutonium,
+        20,
+        4..8,
+        |tile: &lithos_world::tilemap::Tile| matches!(tile.terrain, TileTerrain::AutomataSpire),
+        |biome| matches!(biome, Biome::Core),
+        &mut next_vein_id,
+    );
+
+    spawn_resource_veins(
+        sim,
+        &mut rng,
+        &generator,
+        ResourceType::BioMass,
+        60,
+        6..12,
+        |tile: &lithos_world::tilemap::Tile| matches!(tile.terrain, TileTerrain::Empty),
+        |biome| matches!(biome, Biome::OuterRim | Biome::MidZone),
+        &mut next_vein_id,
+    );
+
+    // ── Salvage Sites ────────────────────────────────────────────────────────
+    for _ in 0..40 {
         let pos = Vec2::new(
-            rng.gen_range(-4000.0..4000.0),
-            rng.gen_range(-4000.0..4000.0),
+            rng.gen_range(-world_half..world_half),
+            rng.gen_range(-world_half..world_half),
         );
         let biome = generator.get_biome(pos);
-        let resource_type = match biome {
-            Biome::OuterRim => ResourceType::Iron,
-            Biome::MidZone => {
-                if rng.gen_bool(0.3) {
-                    ResourceType::Titanium
-                } else {
-                    ResourceType::Iron
-                }
-            }
-            Biome::Core => {
-                if rng.gen_bool(0.4) {
-                    ResourceType::Lithos
-                } else {
-                    ResourceType::Titanium
-                }
-            }
-        };
+        if biome == Biome::OuterRim {
+            continue;
+        }
 
-        let node_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+        let terrain_ok = {
+            let tilemap = sim.world.resource::<TileMap>();
+            tilemap
+                .get_tile_loaded(pos)
+                .map(|t| matches!(t.terrain, TileTerrain::Empty | TileTerrain::AsteroidField))
+                .unwrap_or(false)
+        };
+        if !terrain_ok {
+            continue;
+        }
+
+        let salvage_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+        let item_type = if rng.gen_bool(0.5) {
+            "rusted_husk"
+        } else {
+            "abandoned_mech"
+        };
         let ecs_ent = sim
             .world
             .spawn((
                 Position(pos),
                 Zone(ZoneId::Overworld),
                 Collider { radius: 20.0 },
-                ResourceNode {
-                    resource_type,
-                    yield_amount: rng.gen_range(5..15),
+                SalvageSite {
+                    item_type: item_type.to_string(),
+                    yield_remaining: rng.gen_range(3..8),
+                    required_tool: "salvage_torch".to_string(),
                 },
             ))
             .id();
         sim.world
             .resource_mut::<EntityRegistry>()
-            .register(node_id, ecs_ent);
+            .register(salvage_id, ecs_ent);
+    }
+
+    // ── POIs ─────────────────────────────────────────────────────────────────
+    // Fabrication Plants (2–3 in Mid-Zone, 1 in Core)
+    let mut plant_count = 0;
+    let target_plants = rng.gen_range(3..=4);
+    while plant_count < target_plants {
+        let pos = Vec2::new(
+            rng.gen_range(-world_half..world_half),
+            rng.gen_range(-world_half..world_half),
+        );
+        let biome = generator.get_biome(pos);
+        if biome == Biome::OuterRim {
+            continue;
+        }
+
+        let terrain_ok = {
+            let tilemap = sim.world.resource::<TileMap>();
+            tilemap
+                .get_tile_loaded(pos)
+                .map(|t| t.is_ground_passable())
+                .unwrap_or(false)
+        };
+        if !terrain_ok {
+            continue;
+        }
+
+        let poi_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+        let ecs_ent = sim
+            .world
+            .spawn((
+                Position(pos),
+                Zone(ZoneId::Overworld),
+                Collider { radius: 30.0 },
+                FabricationPlant { tier_bonus: 1 },
+            ))
+            .id();
+        sim.world
+            .resource_mut::<EntityRegistry>()
+            .register(poi_id, ecs_ent);
+        plant_count += 1;
+    }
+
+    // Comms Arrays (3–5 across map)
+    let mut array_count = 0;
+    let target_arrays = rng.gen_range(3..=5);
+    while array_count < target_arrays {
+        let pos = Vec2::new(
+            rng.gen_range(-world_half..world_half),
+            rng.gen_range(-world_half..world_half),
+        );
+
+        let terrain_ok = {
+            let tilemap = sim.world.resource::<TileMap>();
+            tilemap
+                .get_tile_loaded(pos)
+                .map(|t| t.is_ground_passable() && t.height > 150)
+                .unwrap_or(false)
+        };
+        if !terrain_ok {
+            continue;
+        }
+
+        let poi_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+        let ecs_ent = sim
+            .world
+            .spawn((
+                Position(pos),
+                Zone(ZoneId::Overworld),
+                Collider { radius: 20.0 },
+                CommsArray {
+                    hackable: true,
+                    reveals_minimap: true,
+                },
+            ))
+            .id();
+        sim.world
+            .resource_mut::<EntityRegistry>()
+            .register(poi_id, ecs_ent);
+        array_count += 1;
+    }
+}
+
+/// Helper: spawn resource veins at terrain-matching locations.
+#[allow(clippy::too_many_arguments)]
+fn spawn_resource_veins(
+    sim: &mut Simulation,
+    rng: &mut impl rand::Rng,
+    generator: &WorldGenerator,
+    resource_type: ResourceType,
+    vein_count: usize,
+    yield_range: std::ops::Range<u32>,
+    terrain_filter: impl Fn(&lithos_world::tilemap::Tile) -> bool,
+    biome_filter: impl Fn(Biome) -> bool,
+    next_vein_id: &mut u32,
+) {
+    let world_half = 2000.0;
+    let mut attempts = 0;
+    let mut spawned = 0;
+
+    while spawned < vein_count && attempts < vein_count * 50 {
+        attempts += 1;
+        let center = Vec2::new(
+            rng.gen_range(-world_half..world_half),
+            rng.gen_range(-world_half..world_half),
+        );
+        let biome = generator.get_biome(center);
+        if !biome_filter(biome) {
+            continue;
+        }
+
+        let center_ok = {
+            let tilemap = sim.world.resource::<TileMap>();
+            tilemap
+                .get_tile_loaded(center)
+                .map(&terrain_filter)
+                .unwrap_or(false)
+        };
+        if !center_ok {
+            continue;
+        }
+
+        // Spawn a vein: cluster of nodes around the center.
+        let vein_id = *next_vein_id;
+        *next_vein_id += 1;
+        let cluster_size = rng.gen_range(8..15);
+
+        for _ in 0..cluster_size {
+            let offset = Vec2::new(rng.gen_range(-120.0..120.0), rng.gen_range(-120.0..120.0));
+            let pos = center + offset;
+
+            let pos_ok = {
+                let tilemap = sim.world.resource::<TileMap>();
+                tilemap
+                    .get_tile_loaded(pos)
+                    .map(&terrain_filter)
+                    .unwrap_or(false)
+            };
+            if !pos_ok {
+                continue;
+            }
+
+            let node_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+            let ecs_ent = sim
+                .world
+                .spawn((
+                    Position(pos),
+                    Zone(ZoneId::Overworld),
+                    Collider { radius: 16.0 },
+                    ResourceNode {
+                        resource_type: resource_type.clone(),
+                        yield_amount: rng.gen_range(yield_range.clone()),
+                        vein_id: Some(vein_id),
+                    },
+                ))
+                .id();
+            sim.world
+                .resource_mut::<EntityRegistry>()
+                .register(node_id, ecs_ent);
+        }
+        spawned += 1;
     }
 }
 
@@ -371,7 +655,14 @@ pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> Result<()> {
     });
 
     let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate as f64);
-    let mut sim = Simulation::new();
+    let sim_config = lithos_world::resources::SimConfig {
+        dt: tick_duration.as_secs_f32(),
+        max_speed: 200.0,
+        world_half_size: 2000.0,
+        lag_comp_history_ticks: 64,
+        world_seed: config.world_seed,
+    };
+    let mut sim = Simulation::with_config(sim_config);
     let mut connections = ConnectionManager::new();
     let mut unauth_connections = HashMap::new();
 
@@ -380,6 +671,8 @@ pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> Result<()> {
 
     let mut flush_counter = 0_u64;
     let mut heartbeat_counter = 0_u64;
+    let mut player_loaded_chunks: HashMap<EntityId, std::collections::HashSet<ChunkCoord>> =
+        HashMap::new();
 
     loop {
         let tick_start = Instant::now();
@@ -409,6 +702,16 @@ pub async fn run(config: ServerConfig, pool: sqlx::PgPool) -> Result<()> {
         send_dynamic_events(&mut sim, &connections);
         send_raid_events(&mut sim, &connections);
         broadcast_snapshots(&mut sim, &connections);
+
+        // Chunk loading: ensure players have the terrain around them.
+        let chunk_radius = 3;
+        load_and_send_chunks(
+            &mut sim,
+            &connections,
+            chunk_radius,
+            &mut player_loaded_chunks,
+        )
+        .await;
 
         flush_counter += 1;
         if flush_counter.is_multiple_of(600) {
@@ -597,6 +900,31 @@ async fn handle_event(
                         world_seed: config.world_seed,
                     },
                 );
+
+                // Sync initial inventory and ammo so the HUD is correct from the first frame.
+                let entity_ref = sim.world.entity(ecs_entity);
+                let items_json = entity_ref
+                    .get::<Inventory>()
+                    .map(|i| serde_json::to_string(&i.items).unwrap_or_else(|_| "[]".to_string()))
+                    .unwrap_or_else(|| "[]".to_string());
+                encode_and_send(
+                    &outbound_tx,
+                    &ServerMessage::InventoryUpdated {
+                        entity_id,
+                        items_json,
+                    },
+                );
+
+                if let Some(weapon) = entity_ref.get::<Weapon>() {
+                    encode_and_send(
+                        &outbound_tx,
+                        &ServerMessage::AmmoChanged {
+                            entity_id,
+                            ammo: weapon.ammo,
+                            max_ammo: weapon.max_ammo,
+                        },
+                    );
+                }
             }
             ClientMessage::Move { direction, seq } => {
                 sim.world
@@ -1571,5 +1899,109 @@ fn send_raid_events(sim: &mut Simulation, connections: &ConnectionManager) {
         };
         send_to_faction(connections, raid.attacker_faction_id, &msg);
         send_to_faction(connections, raid.defender_faction_id, &msg);
+    }
+}
+
+/// Load chunks around all connected players and send `WorldMapChunk` messages
+/// for any chunks the player hasn't seen yet.
+async fn load_and_send_chunks(
+    sim: &mut Simulation,
+    connections: &ConnectionManager,
+    radius: i32,
+    player_loaded_chunks: &mut HashMap<EntityId, std::collections::HashSet<ChunkCoord>>,
+) {
+    use lithos_protocol::TileData;
+
+    // Collect player positions.
+    let player_positions: Vec<(EntityId, Vec2)> = {
+        let registry = sim.world.resource::<EntityRegistry>();
+        let mut positions = Vec::new();
+        for conn in connections.iter() {
+            if let Some(&ecs_entity) = registry.by_id.get(&conn.entity_id)
+                && let Some(pos) = sim.world.entity(ecs_entity).get::<Position>()
+            {
+                positions.push((conn.entity_id, pos.0));
+            }
+        }
+        positions
+    };
+
+    // Gather loader positions for chunk unloading.
+    let loader_positions: Vec<Vec2> = player_positions.iter().map(|(_, p)| *p).collect();
+
+    // Unload chunks far from all players.
+    {
+        let mut tilemap = sim.world.resource_mut::<TileMap>();
+        tilemap.unload_distant_chunks(&loader_positions, radius + 2);
+    }
+
+    // For each player, ensure nearby chunks are loaded and send new ones.
+    for (entity_id, pos) in player_positions {
+        let center = ChunkCoord::from_world_pos(pos);
+        let loaded = player_loaded_chunks.entry(entity_id).or_default();
+
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let coord = ChunkCoord {
+                    x: center.x + dx,
+                    y: center.y + dy,
+                };
+
+                if loaded.contains(&coord) {
+                    continue;
+                }
+
+                // Generate/load the chunk.
+                let chunk = {
+                    let mut tilemap = sim.world.resource_mut::<TileMap>();
+                    tilemap.ensure_chunk(coord);
+                    tilemap.get_chunk(coord).cloned()
+                };
+
+                if let Some(chunk) = chunk {
+                    // Convert to protocol TileData.
+                    let tiles: Vec<TileData> = chunk
+                        .tiles
+                        .iter()
+                        .map(|t| TileData {
+                            terrain: match t.terrain {
+                                lithos_world::tilemap::TerrainType::Empty => {
+                                    lithos_protocol::TerrainType::Empty
+                                }
+                                lithos_world::tilemap::TerrainType::Rock => {
+                                    lithos_protocol::TerrainType::Rock
+                                }
+                                lithos_world::tilemap::TerrainType::DeepRavine => {
+                                    lithos_protocol::TerrainType::DeepRavine
+                                }
+                                lithos_world::tilemap::TerrainType::AsteroidField => {
+                                    lithos_protocol::TerrainType::AsteroidField
+                                }
+                                lithos_world::tilemap::TerrainType::AutomataSpire => {
+                                    lithos_protocol::TerrainType::AutomataSpire
+                                }
+                            },
+                            ceiling: match t.ceiling {
+                                lithos_world::tilemap::CeilingType::Open => {
+                                    lithos_protocol::CeilingType::Open
+                                }
+                                lithos_world::tilemap::CeilingType::Enclosed => {
+                                    lithos_protocol::CeilingType::Enclosed
+                                }
+                            },
+                            height: t.height,
+                        })
+                        .collect();
+
+                    let msg = ServerMessage::WorldMapChunk {
+                        chunk_x: coord.x,
+                        chunk_y: coord.y,
+                        tiles,
+                    };
+                    send_to_entity(connections, entity_id, &msg);
+                    loaded.insert(coord);
+                }
+            }
+        }
     }
 }

@@ -4,6 +4,7 @@ use bevy_ecs::prelude::*;
 
 use crate::resources::*;
 use crate::systems;
+use crate::tilemap::TileMap;
 
 /// The game simulation. Wraps a bevy_ecs [`World`] and [`Schedule`].
 pub struct Simulation {
@@ -22,6 +23,7 @@ impl Simulation {
         let mut world = World::new();
 
         // Insert resources.
+        let world_seed = config.world_seed;
         world.insert_resource(config);
         world.insert_resource(TickCounter::default());
         world.insert_resource(InputQueue::default());
@@ -42,6 +44,7 @@ impl Simulation {
         world.insert_resource(TradeQueue::default());
         world.insert_resource(TradeEvents::default());
         world.insert_resource(LoadedZones::default());
+        world.insert_resource(TileMap::new(world_seed));
 
         // Build the per-tick schedule.
         let mut schedule = Schedule::default();

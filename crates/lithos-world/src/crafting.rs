@@ -19,7 +19,7 @@ pub struct Recipe {
 
 /// All available crafting recipes.
 pub static RECIPES: &[Recipe] = &[
-    // Basic recipes (OuterRim resources) — Fabrication Level 1
+    // ── Basic recipes (OuterRim resources) — Fabrication Level 1 ──────────────
     Recipe {
         name: "iron_plate",
         inputs: &["iron", "iron"],
@@ -28,20 +28,41 @@ pub static RECIPES: &[Recipe] = &[
         required_level: 1,
     },
     Recipe {
+        name: "copper_wire",
+        inputs: &["copper", "copper"],
+        output: "copper_wire",
+        required_branch: SkillBranch::Fabrication,
+        required_level: 1,
+    },
+    Recipe {
         name: "circuit",
-        inputs: &["iron", "iron_plate"],
+        inputs: &["copper_wire", "iron_plate"],
         output: "circuit",
         required_branch: SkillBranch::Fabrication,
         required_level: 1,
     },
     Recipe {
+        name: "glass",
+        inputs: &["silica", "silica"],
+        output: "glass",
+        required_branch: SkillBranch::Fabrication,
+        required_level: 1,
+    },
+    Recipe {
         name: "medkit",
-        inputs: &["scrap", "circuit"],
+        inputs: &["biomass", "glass"],
         output: "medkit",
         required_branch: SkillBranch::Fabrication,
         required_level: 1,
     },
-    // Mid-tier recipes (MidZone resources) — Fabrication Level 3
+    Recipe {
+        name: "bio_fuel",
+        inputs: &["biomass", "biomass"],
+        output: "bio_fuel",
+        required_branch: SkillBranch::Fabrication,
+        required_level: 1,
+    },
+    // ── Mid-tier recipes (MidZone resources) — Fabrication Level 3 ────────────
     Recipe {
         name: "titanium_plate",
         inputs: &["titanium", "titanium"],
@@ -63,29 +84,36 @@ pub static RECIPES: &[Recipe] = &[
         required_branch: SkillBranch::Fabrication,
         required_level: 3,
     },
-    // End-game recipes (Core resources) — Fabrication Level 5
+    // ── End-game recipes (Core resources) — Fabrication Level 5 ───────────────
     Recipe {
-        name: "lithos_core",
-        inputs: &["lithos", "lithos"],
-        output: "lithos_core",
+        name: "uranium_core",
+        inputs: &["uranium", "uranium"],
+        output: "uranium_core",
+        required_branch: SkillBranch::Fabrication,
+        required_level: 5,
+    },
+    Recipe {
+        name: "plutonium_core",
+        inputs: &["plutonium", "plutonium"],
+        output: "plutonium_core",
         required_branch: SkillBranch::Fabrication,
         required_level: 5,
     },
     Recipe {
         name: "warp_drive",
-        inputs: &["lithos_core", "battery", "titanium_plate"],
+        inputs: &["uranium_core", "battery", "titanium_plate"],
         output: "warp_drive",
         required_branch: SkillBranch::Fabrication,
         required_level: 5,
     },
     Recipe {
         name: "breach_generator",
-        inputs: &["lithos_core", "shield_module", "warp_drive"],
+        inputs: &["plutonium_core", "shield_module", "warp_drive"],
         output: "breach_generator",
         required_branch: SkillBranch::Fabrication,
         required_level: 5,
     },
-    // Base building recipes — Fabrication Level 1-2
+    // ── Base building recipes — Fabrication Level 1-2 ─────────────────────────
     Recipe {
         name: "wall_segment",
         inputs: &["iron_plate", "iron_plate"],

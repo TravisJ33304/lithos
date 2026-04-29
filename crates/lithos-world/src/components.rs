@@ -100,14 +100,69 @@ pub struct Npc {
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub enum ResourceType {
     Iron,
-    Titanium,
-    Lithos,
+    Copper,
+    Silica,
+    Uranium,
+    Plutonium,
+    BioMass,
 }
 
 #[derive(Component, Debug, Clone)]
 pub struct ResourceNode {
     pub resource_type: ResourceType,
     pub yield_amount: u32,
+    /// Optional vein ID for cluster grouping.
+    pub vein_id: Option<u32>,
+}
+
+// ── Salvage, Loot & Hacking ──────────────────────────────────────────────────
+
+/// A salvageable wreck in the world.
+#[derive(Component, Debug, Clone)]
+pub struct SalvageSite {
+    pub item_type: String,
+    pub yield_remaining: u32,
+    pub required_tool: String,
+}
+
+/// A loot container that can be opened.
+#[derive(Component, Debug, Clone)]
+pub struct LootContainer {
+    pub container_type: LootContainerType,
+    pub loot_table_id: String,
+    pub is_opened: bool,
+    pub guard_radius: f32,
+}
+
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub enum LootContainerType {
+    SupplyCrate,
+    AutomataReceptacle,
+    MilitaryLockbox,
+}
+
+/// A hackable terminal or comms array.
+#[derive(Component, Debug, Clone)]
+pub struct HackingTarget {
+    pub hack_time_seconds: f32,
+    pub reward_table_id: String,
+    pub is_hacked: bool,
+}
+
+// ── Points of Interest ───────────────────────────────────────────────────────
+
+/// An automated fabrication plant POI.
+#[derive(Component, Debug, Clone)]
+pub struct FabricationPlant {
+    /// Allows crafting one tier above the player's current skill level.
+    pub tier_bonus: i32,
+}
+
+/// A derelict comms array POI.
+#[derive(Component, Debug, Clone)]
+pub struct CommsArray {
+    pub hackable: bool,
+    pub reveals_minimap: bool,
 }
 
 // ── Base Building & Persistence ──────────────────────────────────────────────

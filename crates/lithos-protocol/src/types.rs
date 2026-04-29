@@ -135,6 +135,39 @@ pub enum SnapshotEntityType {
     Unknown,
 }
 
+/// Terrain type for a tile in the overworld tilemap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TerrainType {
+    Empty,
+    Rock,
+    DeepRavine,
+    AsteroidField,
+    AutomataSpire,
+}
+
+/// Ceiling type for a tile — determines whether flying units can pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CeilingType {
+    Open,
+    Enclosed,
+}
+
+/// A compressed tile representation for network transmission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TileData {
+    pub terrain: TerrainType,
+    pub ceiling: CeilingType,
+    pub height: u8,
+}
+
+/// A chunk of tiles sent from server to client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TileChunk {
+    pub coord_x: i32,
+    pub coord_y: i32,
+    pub tiles: Vec<TileData>,
+}
+
 /// Chat channel scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChatChannel {

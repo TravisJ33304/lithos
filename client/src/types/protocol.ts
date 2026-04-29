@@ -29,6 +29,21 @@ export type SnapshotEntityType =
 	| "Projectile"
 	| "Unknown";
 
+export type TerrainType =
+	| "Empty"
+	| "Rock"
+	| "DeepRavine"
+	| "AsteroidField"
+	| "AutomataSpire";
+
+export type CeilingType = "Open" | "Enclosed";
+
+export interface TileData {
+	terrain: TerrainType;
+	ceiling: CeilingType;
+	height: number;
+}
+
 export interface EntitySnapshot {
 	id: number;
 	position: Vec2;
@@ -159,6 +174,7 @@ export type ServerMessage =
 	| { RaidWarning: { raid: RaidStateSnapshot } }
 	| { RaidStarted: { raid: RaidStateSnapshot } }
 	| { RaidEnded: { raid: RaidStateSnapshot; attacker_won: boolean } }
+	| { WorldMapChunk: { chunk_x: number; chunk_y: number; tiles: TileData[] } }
 	| { Pong: { client_timestamp: number; server_timestamp: number } }
 	| { ResourceDepleted: { entity_id: number } }
 	| {

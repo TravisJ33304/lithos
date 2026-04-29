@@ -7,7 +7,18 @@
 import * as Phaser from "phaser";
 import { createNoise2D } from "simplex-noise";
 import type { NetworkClient } from "../net/NetworkClient";
-import type { EntitySnapshot, ServerMessage, Vec2 } from "../types/protocol";
+import type {
+	EntitySnapshot,
+	ServerMessage,
+	TileData,
+	Vec2,
+} from "../types/protocol";
+
+/** A single chunk of the tilemap received from the server. */
+interface TileChunk {
+	tiles: TileData[];
+	graphics: Phaser.GameObjects.Graphics[];
+}
 
 /** Data passed from BootScene. */
 interface OverworldData {
@@ -35,6 +46,10 @@ export class OverworldScene extends Phaser.Scene {
 	private myEntityId!: number;
 	private entities: Map<number, RenderedEntity> = new Map();
 	private projectileIds: Set<number> = new Set();
+	private chunks: Map<string, TileChunk> = new Map();
+	private chunkGraphicsPool: Phaser.GameObjects.Graphics[] = [];
+	private chunkSize = 32;
+	private tileSize = 40;
 	private healthText!: Phaser.GameObjects.Text;
 	private inventoryText!: Phaser.GameObjects.Text;
 	private crosshair!: Phaser.GameObjects.Graphics;
@@ -444,6 +459,8 @@ export class OverworldScene extends Phaser.Scene {
 		this.net.onMessage((msg: ServerMessage) => {
 			if ("StateSnapshot" in msg) {
 				this.handleSnapshot(msg.StateSnapshot);
+			} else if ("WorldMapChunk" in msg) {
+				this.handleWorldMapChunk(msg.WorldMapChunk);
 			} else if ("ZoneChanged" in msg) {
 				if ("AsteroidBase" in msg.ZoneChanged.zone) {
 					this.scene.start("AsteroidBaseScene", {
@@ -716,6 +733,75 @@ export class OverworldScene extends Phaser.Scene {
 
 		// --- HUD ---
 		this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`);
+	}
+
+	private handleWorldMapChunk(chunkMsg: {
+		chunk_x: number;
+		chunk_y: number;
+		tiles: TileData[];
+	}): void {
+		const key = `${chunkMsg.chunk_x},${chunkMsg.chunk_y}`;
+		if (this.chunks.has(key)) {
+			// Already have this chunk — ignore duplicate.
+			return;
+		}
+
+		// Clean up old chunk graphics if pool is getting large.
+		if (this.chunkGraphicsPool.length > 200) {
+			const old = this.chunkGraphicsPool.shift();
+			if (old) old.destroy();
+		}
+
+		const graphics = this.add.graphics();
+		graphics.setDepth(0);
+		this.chunkGraphicsPool.push(graphics);
+
+		const chunkWorldX = chunkMsg.chunk_x * this.chunkSize * this.tileSize;
+		const chunkWorldY = chunkMsg.chunk_y * this.chunkSize * this.tileSize;
+
+		for (let ly = 0; ly < this.chunkSize; ly++) {
+			for (let lx = 0; lx < this.chunkSize; lx++) {
+				const tile = chunkMsg.tiles[ly * this.chunkSize + lx];
+				if (!tile || tile.terrain === "Empty") continue;
+
+				const tx = chunkWorldX + lx * this.tileSize;
+				const ty = chunkWorldY + ly * this.tileSize;
+
+				let color = 0x0d1117;
+				switch (tile.terrain) {
+					case "Rock":
+						color = 0x3d444d;
+						break;
+					case "DeepRavine":
+						color = 0x000000;
+						break;
+					case "AsteroidField":
+						color = 0x21262d;
+						break;
+					case "AutomataSpire":
+						color = 0x7d1a1a;
+						break;
+				}
+
+				// Height-based brightness adjustment
+				const brightness = 0.7 + (tile.height / 255) * 0.3;
+				const r = ((color >> 16) & 0xff) * brightness;
+				const g = ((color >> 8) & 0xff) * brightness;
+				const b = (color & 0xff) * brightness;
+				const adjustedColor = Phaser.Display.Color.GetColor(r, g, b);
+
+				graphics.fillStyle(adjustedColor, 1.0);
+				graphics.fillRect(tx, ty, this.tileSize, this.tileSize);
+
+				// Enclosed ceiling indicator — subtle border
+				if (tile.ceiling === "Enclosed") {
+					graphics.lineStyle(1, 0x58a6ff, 0.3);
+					graphics.strokeRect(tx, ty, this.tileSize, this.tileSize);
+				}
+			}
+		}
+
+		this.chunks.set(key, { tiles: chunkMsg.tiles, graphics: [graphics] });
 	}
 
 	private handleSnapshot(snapshot: {
@@ -1183,8 +1269,15 @@ export class OverworldScene extends Phaser.Scene {
 		// Recipe definitions (must match server-side RECIPES)
 		const recipes = [
 			{ name: "iron_plate", inputs: "2× iron", output: "iron_plate" },
-			{ name: "circuit", inputs: "iron + iron_plate", output: "circuit" },
-			{ name: "medkit", inputs: "scrap + circuit", output: "medkit" },
+			{ name: "copper_wire", inputs: "2× copper", output: "copper_wire" },
+			{
+				name: "circuit",
+				inputs: "copper_wire + iron_plate",
+				output: "circuit",
+			},
+			{ name: "glass", inputs: "2× silica", output: "glass" },
+			{ name: "medkit", inputs: "biomass + glass", output: "medkit" },
+			{ name: "bio_fuel", inputs: "2× biomass", output: "bio_fuel" },
 			{
 				name: "titanium_plate",
 				inputs: "2× titanium",
@@ -1197,14 +1290,14 @@ export class OverworldScene extends Phaser.Scene {
 			},
 			{
 				name: "shield_module",
-				inputs: "titan_plate + battery + circuit",
+				inputs: "titanium_plate + battery + circuit",
 				output: "shield_module",
 			},
 			{ name: "wall_segment", inputs: "2× iron_plate", output: "wall_segment" },
 			{ name: "door", inputs: "iron_plate + circuit", output: "door" },
 			{
 				name: "generator",
-				inputs: "battery + titan_plate + circuit",
+				inputs: "battery + titanium_plate + circuit",
 				output: "generator",
 			},
 			{

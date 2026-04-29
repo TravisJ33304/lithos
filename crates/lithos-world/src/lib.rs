@@ -12,4 +12,5 @@ pub mod economy;
 pub mod resources;
 pub mod simulation;
 pub mod systems;
+pub mod tilemap;
 pub mod world_gen;

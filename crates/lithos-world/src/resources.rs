@@ -16,6 +16,8 @@ pub struct SimConfig {
     pub world_half_size: f32,
     /// Number of historical ticks retained for lag compensation.
     pub lag_comp_history_ticks: u64,
+    /// World generation seed.
+    pub world_seed: u32,
 }
 
 impl Default for SimConfig {
@@ -25,6 +27,7 @@ impl Default for SimConfig {
             max_speed: 200.0,        // units/sec
             world_half_size: 2000.0, // 4000x4000 world
             lag_comp_history_ticks: 64,
+            world_seed: 12345,
         }
     }
 }
