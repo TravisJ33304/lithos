@@ -18,6 +18,22 @@ pub const TILE_SIZE: f32 = 40.0;
 /// Size of a chunk in world units.
 pub const CHUNK_WORLD_SIZE: f32 = CHUNK_SIZE as f32 * TILE_SIZE; // 1280.0
 
+/// Convert a world position to tile coordinates.
+pub fn world_to_tile(pos: lithos_protocol::Vec2) -> (i32, i32) {
+    (
+        (pos.x / TILE_SIZE).floor() as i32,
+        (pos.y / TILE_SIZE).floor() as i32,
+    )
+}
+
+/// Convert tile coordinates to the center world position of that tile.
+pub fn tile_to_world(tile: (i32, i32)) -> lithos_protocol::Vec2 {
+    lithos_protocol::Vec2::new(
+        tile.0 as f32 * TILE_SIZE + TILE_SIZE * 0.5,
+        tile.1 as f32 * TILE_SIZE + TILE_SIZE * 0.5,
+    )
+}
+
 /// Coordinate of a chunk in chunk-space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ChunkCoord {
@@ -257,6 +273,120 @@ impl TileMap {
             }
         }
         self.chunks.retain(|coord, _| keep.contains(coord));
+    }
+
+    /// Run A* pathfinding from `start` to `goal` for ground units.
+    /// Returns a list of world positions representing the path, or None if no path exists.
+    /// `max_distance` limits the search radius in tiles to prevent excessive computation.
+    pub fn find_path_ground(
+        &mut self,
+        start: lithos_protocol::Vec2,
+        goal: lithos_protocol::Vec2,
+        max_distance: usize,
+    ) -> Option<Vec<lithos_protocol::Vec2>> {
+        use std::collections::{BinaryHeap, HashSet};
+
+        let start_coord = world_to_tile(start);
+        let goal_coord = world_to_tile(goal);
+
+        // Early exit if start or goal is impassable.
+        if !self.is_passable(start, false) || !self.is_passable(goal, false) {
+            return None;
+        }
+
+        let heuristic = |a: (i32, i32), b: (i32, i32)| -> f32 {
+            let dx = (a.0 - b.0) as f32;
+            let dy = (a.1 - b.1) as f32;
+            (dx * dx + dy * dy).sqrt()
+        };
+
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        struct Node {
+            cost: f32,
+            pos: (i32, i32),
+        }
+        impl Eq for Node {}
+        impl Ord for Node {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                other.cost.partial_cmp(&self.cost).unwrap()
+            }
+        }
+        impl PartialOrd for Node {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut open = BinaryHeap::new();
+        let mut closed = HashSet::new();
+        let mut came_from = HashMap::new();
+        let mut g_score = HashMap::new();
+
+        open.push(Node {
+            cost: heuristic(start_coord, goal_coord),
+            pos: start_coord,
+        });
+        g_score.insert(start_coord, 0.0f32);
+
+        let directions = [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
+        ];
+
+        while let Some(current) = open.pop() {
+            if current.pos == goal_coord {
+                // Reconstruct path.
+                let mut path = Vec::new();
+                let mut cur = goal_coord;
+                while cur != start_coord {
+                    path.push(tile_to_world(cur));
+                    cur = *came_from.get(&cur)?;
+                }
+                path.reverse();
+                return Some(path);
+            }
+
+            if closed.contains(&current.pos) {
+                continue;
+            }
+            closed.insert(current.pos);
+
+            if closed.len() > max_distance * max_distance {
+                return None; // Search limit exceeded.
+            }
+
+            let current_g = *g_score.get(&current.pos).unwrap_or(&f32::MAX);
+
+            for &(dx, dy) in &directions {
+                let neighbor = (current.pos.0 + dx, current.pos.1 + dy);
+                let neighbor_world = tile_to_world(neighbor);
+
+                if !self.is_passable(neighbor_world, false) {
+                    continue;
+                }
+
+                let move_cost = if dx != 0 && dy != 0 { 1.414 } else { 1.0 };
+                let tentative_g = current_g + move_cost;
+
+                if tentative_g < *g_score.get(&neighbor).unwrap_or(&f32::MAX) {
+                    came_from.insert(neighbor, current.pos);
+                    g_score.insert(neighbor, tentative_g);
+                    let f = tentative_g + heuristic(neighbor, goal_coord);
+                    open.push(Node {
+                        cost: f,
+                        pos: neighbor,
+                    });
+                }
+            }
+        }
+
+        None
     }
 }
 

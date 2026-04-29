@@ -63,7 +63,15 @@ impl Simulation {
                 systems::projectile_expiration_system,
                 systems::zone_transfer_system,
                 systems::item_pickup_system,
+                systems::npc_pathfinding_brain_system,
                 systems::npc_ai_system,
+            )
+                .chain(),
+        );
+        schedule.add_systems(
+            (
+                systems::npc_pathfinding_system,
+                systems::npc_attack_system,
                 systems::trader_market_system,
                 systems::mining_system,
                 systems::trade_system,
@@ -71,7 +79,8 @@ impl Simulation {
                 systems::dynamic_events_system,
                 systems::raid_state_system,
             )
-                .chain(),
+                .chain()
+                .after(systems::npc_ai_system),
         );
 
         Self { world, schedule }

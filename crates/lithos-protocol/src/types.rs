@@ -107,6 +107,16 @@ impl std::ops::Mul<f32> for Vec2 {
     }
 }
 
+impl std::ops::Div<f32> for Vec2 {
+    type Output = Self;
+    fn div(self, rhs: f32) -> Self {
+        Self {
+            x: self.x / rhs,
+            y: self.y / rhs,
+        }
+    }
+}
+
 impl std::ops::AddAssign for Vec2 {
     fn add_assign(&mut self, rhs: Self) {
         self.x += rhs.x;

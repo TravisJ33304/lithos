@@ -79,8 +79,10 @@ pub struct Dead;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NpcState {
     Patrol,
+    Investigate,
     Aggro,
     Attack,
+    Retreat,
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +97,26 @@ pub struct Npc {
     pub state: NpcState,
     pub target: Option<lithos_protocol::EntityId>,
     pub spawn_pos: lithos_protocol::Vec2,
+    /// Tick count when the NPC entered its current state.
+    pub state_entered_tick: u64,
+}
+
+/// A computed path for an NPC to follow.
+#[derive(Component, Debug, Clone, Default)]
+pub struct NpcPath {
+    /// Waypoints in world coordinates.
+    pub waypoints: Vec<lithos_protocol::Vec2>,
+    /// Index of the current target waypoint.
+    pub current_index: usize,
+    /// If true, the path should be recalculated next tick.
+    pub stale: bool,
+}
+
+/// Marks an NPC as guarding a specific location.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct GuardPost {
+    pub center: lithos_protocol::Vec2,
+    pub radius: f32,
 }
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]

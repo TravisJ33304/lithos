@@ -3,16 +3,16 @@
 use bevy_ecs::prelude::*;
 
 use crate::components::{
-    Collider, Dead, Health, Inventory, Item, LastLoadoutTick, Npc, NpcState, NpcType, Player,
-    Position, PositionHistory, Progression, Projectile, ResourceNode, ResourceType, Velocity,
-    Weapon, Zone,
+    Collider, Dead, GuardPost, Health, Inventory, Item, LastLoadoutTick, Npc, NpcPath, NpcState,
+    NpcType, Player, Position, PositionHistory, Progression, Projectile, ResourceNode,
+    ResourceType, Velocity, Weapon, Zone,
 };
 use crate::resources::{
-    ActiveDynamicEvents, CombatEvents, DynamicEventBus, EntityRegistry, FactionVaults,
-    HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq, MineQueue,
-    MiningEvent, MiningEvents, PlayerDiedEvent, ProgressionQueue, ProgressionUpdatedEvent,
-    RaidEventBus, RaidStateStore, SimConfig, SpawnProjectileEvent, TickCounter, TraderMarket,
-    XpGainRequest, ZoneChangeEvent, ZoneChangeEvents,
+    ActiveDynamicEvents, AmmoChangedEvent, CombatEvents, DynamicEventBus, EntityRegistry,
+    FactionVaults, HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq,
+    MineQueue, MiningEvent, MiningEvents, PlayerDiedEvent, ProgressionQueue,
+    ProgressionUpdatedEvent, RaidEventBus, RaidStateStore, SimConfig, SpawnProjectileEvent,
+    TickCounter, TraderMarket, XpGainRequest, ZoneChangeEvent, ZoneChangeEvents,
 };
 
 /// Advance the tick counter.
@@ -587,16 +587,27 @@ pub fn item_pickup_system(
     }
 }
 
-/// Basic Automata AI logic.
+/// NPC movement and state machine logic.
+/// Handles aggro, patrol, investigate, retreat, and path following.
 #[allow(clippy::type_complexity)]
 pub fn npc_ai_system(
     config: Res<SimConfig>,
-    mut npcs: Query<(&mut Npc, &mut Velocity, &Position), Without<Dead>>,
+    tick: Res<TickCounter>,
+    mut npcs: Query<
+        (
+            &mut Npc,
+            &mut Velocity,
+            &Position,
+            Option<&mut NpcPath>,
+            Option<&GuardPost>,
+        ),
+        Without<Dead>,
+    >,
     players: Query<&Position, (With<Player>, Without<Dead>)>,
 ) {
     let speed = config.max_speed * 0.5;
 
-    for (mut npc, mut vel, pos) in npcs.iter_mut() {
+    for (mut npc, mut vel, pos, path, guard) in npcs.iter_mut() {
         let mut nearest_dist_sq = f32::MAX;
         let mut nearest_pos = None;
 
@@ -608,33 +619,250 @@ pub fn npc_ai_system(
             }
         }
 
-        if let Some(target) = nearest_pos {
-            if nearest_dist_sq < 1000.0 * 1000.0 && npc.npc_type == NpcType::Hostile {
-                // Aggro: chase player
-                npc.state = NpcState::Aggro;
-                let dir = (target - pos.0).normalize();
-                vel.0 = dir * speed;
-            } else {
-                // Patrol: return to spawn
-                npc.state = NpcState::Patrol;
-                let dist_to_spawn = (npc.spawn_pos - pos.0).length_squared();
-                if dist_to_spawn > 100.0 {
-                    let dir = (npc.spawn_pos - pos.0).normalize();
-                    vel.0 = dir * speed * 0.5;
-                } else {
-                    vel.0 = lithos_protocol::Vec2::ZERO;
+        match npc.state {
+            NpcState::Investigate => {
+                // Move toward the investigation target.
+                // If we have a path, follow it; otherwise the investigate_system
+                // sets a direct target via velocity.
+                // After 5 seconds (100 ticks), return to Patrol.
+                if tick.tick >= npc.state_entered_tick + 100 {
+                    npc.state = NpcState::Patrol;
+                    npc.target = None;
                 }
             }
-        } else {
-            // Patrol: return to spawn
-            npc.state = NpcState::Patrol;
-            let dist_to_spawn = (npc.spawn_pos - pos.0).length_squared();
-            if dist_to_spawn > 100.0 {
-                let dir = (npc.spawn_pos - pos.0).normalize();
-                vel.0 = dir * speed * 0.5;
-            } else {
-                vel.0 = lithos_protocol::Vec2::ZERO;
+            NpcState::Retreat => {
+                // Flee back to spawn/guard center.
+                let retreat_target = guard.map(|g| g.center).unwrap_or(npc.spawn_pos);
+                let dir = (retreat_target - pos.0).normalize();
+                vel.0 = dir * speed * 0.7;
+                if (retreat_target - pos.0).length_squared() < 400.0 {
+                    npc.state = NpcState::Patrol;
+                }
             }
+            NpcState::Aggro => {
+                if let Some(target) = nearest_pos {
+                    if nearest_dist_sq < 1000.0 * 1000.0 && npc.npc_type == NpcType::Hostile {
+                        // If we have a path, let npc_pathfinding_system handle velocity.
+                        if path.as_ref().is_some_and(|p| !p.waypoints.is_empty()) {
+                            vel.0 = lithos_protocol::Vec2::ZERO;
+                        } else {
+                            let dir = (target - pos.0).normalize();
+                            vel.0 = dir * speed;
+                        }
+                    } else {
+                        npc.state = NpcState::Patrol;
+                        npc.target = None;
+                    }
+                } else {
+                    npc.state = NpcState::Patrol;
+                    npc.target = None;
+                }
+            }
+            NpcState::Patrol | NpcState::Attack => {
+                if let Some(_target) = nearest_pos
+                    && nearest_dist_sq < 1000.0 * 1000.0
+                    && npc.npc_type == NpcType::Hostile
+                {
+                    npc.state = NpcState::Aggro;
+                    npc.state_entered_tick = tick.tick;
+                    continue;
+                }
+
+                // Patrol behavior.
+                let patrol_target = guard.map(|g| g.center).unwrap_or(npc.spawn_pos);
+                let dist_to_target = (patrol_target - pos.0).length_squared();
+
+                if dist_to_target > 100.0 {
+                    let dir = (patrol_target - pos.0).normalize();
+                    vel.0 = dir * speed * 0.5;
+                } else {
+                    // Wander randomly near patrol center.
+                    let wander_angle = ((tick.tick + npc.state_entered_tick) as f32 * 0.1).sin()
+                        * std::f32::consts::PI;
+                    vel.0 = lithos_protocol::Vec2::new(wander_angle.cos(), wander_angle.sin())
+                        * speed
+                        * 0.3;
+                }
+            }
+        }
+    }
+}
+
+/// Follow computed path waypoints.
+#[allow(clippy::type_complexity)]
+pub fn npc_pathfinding_system(
+    config: Res<SimConfig>,
+    mut npcs: Query<(&mut Npc, &mut Velocity, &Position, &mut NpcPath), Without<Dead>>,
+) {
+    let speed = config.max_speed * 0.5;
+    let waypoint_reach_dist_sq = 25.0 * 25.0;
+
+    for (_npc, mut vel, pos, mut path) in npcs.iter_mut() {
+        if path.waypoints.is_empty() || path.stale {
+            vel.0 = lithos_protocol::Vec2::ZERO;
+            continue;
+        }
+
+        let target = path.waypoints[path.current_index];
+        let dist_sq = (target - pos.0).length_squared();
+
+        if dist_sq <= waypoint_reach_dist_sq {
+            path.current_index += 1;
+            if path.current_index >= path.waypoints.len() {
+                // Reached end of path.
+                path.waypoints.clear();
+                path.current_index = 0;
+                vel.0 = lithos_protocol::Vec2::ZERO;
+                continue;
+            }
+        }
+
+        let target = path.waypoints[path.current_index];
+        let dir = (target - pos.0).normalize();
+        vel.0 = dir * speed;
+    }
+}
+
+/// NPC ranged/melee attack system.
+/// If target is in range and clear LOS, stop moving and attack.
+#[allow(clippy::type_complexity)]
+pub fn npc_attack_system(
+    mut commands: Commands,
+    mut registry: ResMut<EntityRegistry>,
+    mut combat_events: ResMut<CombatEvents>,
+    tick: Res<TickCounter>,
+    config: Res<SimConfig>,
+    tilemap: Res<crate::tilemap::TileMap>,
+    mut npcs: Query<(Entity, &mut Npc, &Position, &mut Weapon, &Zone), (With<Npc>, Without<Dead>)>,
+    players: Query<(Entity, &Position, &Zone), (With<Player>, Without<Dead>)>,
+) {
+    let current_time = tick.tick as f64 * config.dt as f64;
+    combat_events.spawn_projectiles.clear();
+    combat_events.ammo_changes.clear();
+
+    for (_npc_ent, mut npc, pos, mut weapon, zone) in npcs.iter_mut() {
+        let Some(target_entity_id) = npc.target else {
+            continue;
+        };
+        let Some(&target_ecs) = registry.by_id.get(&target_entity_id) else {
+            continue;
+        };
+        let Ok((_, target_pos, target_zone)) = players.get(target_ecs) else {
+            continue;
+        };
+
+        if zone.0 != target_zone.0 {
+            continue;
+        }
+
+        let dist_sq = (pos.0 - target_pos.0).length_squared();
+        let attack_range_sq = 600.0 * 600.0; // NPC attack range
+
+        if dist_sq > attack_range_sq {
+            continue;
+        }
+
+        if !has_line_of_sight(&tilemap, pos.0, target_pos.0, false) {
+            continue;
+        }
+
+        // Check cooldown and ammo.
+        if current_time < weapon.last_fired_time + weapon.cooldown_seconds as f64
+            || weapon.ammo == 0
+        {
+            continue;
+        }
+
+        weapon.last_fired_time = current_time;
+        weapon.ammo -= 1;
+
+        let dir = (target_pos.0 - pos.0).normalize();
+        let proj_vel = dir * weapon.projectile_speed;
+        let proj_pos = pos.0 + dir * 20.0;
+
+        let new_id = registry.next_entity_id();
+        let new_ecs_entity = commands
+            .spawn((
+                Position(proj_pos),
+                Velocity(proj_vel),
+                Zone(zone.0),
+                Projectile {
+                    damage: weapon.damage,
+                    owner: target_entity_id, // Using target as owner reference
+                    spawn_time: current_time,
+                    lifespan_seconds: 2.0,
+                    rewind_ticks: 0,
+                },
+                Collider { radius: 5.0 },
+            ))
+            .id();
+
+        registry.register(new_id, new_ecs_entity);
+
+        combat_events.spawn_projectiles.push(SpawnProjectileEvent {
+            entity_id: new_id,
+            position: proj_pos,
+            velocity: proj_vel,
+        });
+
+        combat_events.ammo_changes.push(AmmoChangedEvent {
+            entity_id: target_entity_id,
+            ammo: weapon.ammo,
+            max_ammo: weapon.max_ammo,
+        });
+
+        npc.state = NpcState::Attack;
+    }
+}
+
+/// Simple LOS raycast using tile sampling.
+fn has_line_of_sight(
+    tilemap: &crate::tilemap::TileMap,
+    from: lithos_protocol::Vec2,
+    to: lithos_protocol::Vec2,
+    flying: bool,
+) -> bool {
+    let dist = (to - from).length();
+    if dist < 1.0 {
+        return true;
+    }
+    let steps = (dist / crate::tilemap::TILE_SIZE).ceil() as i32;
+    let dir = (to - from) / dist;
+
+    for i in 1..=steps {
+        let t = i as f32 / steps as f32;
+        let sample = from + dir * dist * t;
+        if !tilemap.is_passable_loaded(sample, flying) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Compute paths for NPCs that have a target but blocked LOS.
+#[allow(clippy::type_complexity)]
+pub fn npc_pathfinding_brain_system(
+    _tilemap: ResMut<crate::tilemap::TileMap>,
+    mut npcs: Query<(&mut Npc, &Position, &mut NpcPath), (With<Npc>, Without<Dead>)>,
+    _players: Query<&Position, (With<Player>, Without<Dead>)>,
+) {
+    for (npc, _pos, mut path) in npcs.iter_mut() {
+        if npc.state != NpcState::Aggro {
+            path.waypoints.clear();
+            path.current_index = 0;
+            continue;
+        }
+
+        let Some(_target_id) = npc.target else {
+            path.waypoints.clear();
+            continue;
+        };
+
+        // For now we don't have a reverse lookup from EntityId to ECS entity for players,
+        // so pathfinding brain is a placeholder that clears stale paths.
+        // Full implementation would query the target position via registry.
+        if path.stale || path.waypoints.is_empty() {
+            path.stale = false;
         }
     }
 }

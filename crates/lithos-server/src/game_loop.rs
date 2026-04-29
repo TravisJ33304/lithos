@@ -230,6 +230,7 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                     state: NpcState::Patrol,
                     target: None,
                     spawn_pos: pos,
+                    state_entered_tick: 0,
                 },
                 Health {
                     current: health,
@@ -288,6 +289,7 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                     state: NpcState::Patrol,
                     target: None,
                     spawn_pos: pos,
+                    state_entered_tick: 0,
                 },
                 Health {
                     current: 500.0,
