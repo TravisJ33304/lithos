@@ -77,6 +77,10 @@ function normalizeSnapshotEntityType(t: unknown): SnapshotEntityType {
 	const allowed: SnapshotEntityType[] = [
 		"Player",
 		"Hostile",
+		"Rover",
+		"Drone",
+		"AssaultWalker",
+		"SniperWalker",
 		"Trader",
 		"ResourceNode",
 		"Item",

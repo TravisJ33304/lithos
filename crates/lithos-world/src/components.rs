@@ -87,7 +87,10 @@ pub enum NpcState {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NpcType {
-    Hostile,
+    Rover,
+    Drone,
+    AssaultWalker,
+    SniperWalker,
     Trader,
 }
 
@@ -111,6 +114,10 @@ pub struct NpcPath {
     /// If true, the path should be recalculated next tick.
     pub stale: bool,
 }
+
+/// Marks an entity as capable of flying (bypasses ground obstacles).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Flying;
 
 /// Marks an NPC as guarding a specific location.
 #[derive(Component, Debug, Clone, Copy)]

@@ -138,6 +138,10 @@ pub enum ZoneId {
 pub enum SnapshotEntityType {
     Player,
     Hostile,
+    Rover,
+    Drone,
+    AssaultWalker,
+    SniperWalker,
     Trader,
     ResourceNode,
     Item,

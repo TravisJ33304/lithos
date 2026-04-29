@@ -15,8 +15,8 @@ use lithos_protocol::{
     ServerMessage, SkillBranch, Vec2, ZoneId, codec,
 };
 use lithos_world::components::{
-    BaseTile, Collider, Health, Inventory, LastLoadoutTick, Npc, NpcState, NpcType, Oxygen, Player,
-    Position, PositionHistory, PowerConsumer, PowerGenerator, Progression, ResourceNode,
+    BaseTile, Collider, Flying, Health, Inventory, LastLoadoutTick, Npc, NpcState, NpcType, Oxygen,
+    Player, Position, PositionHistory, PowerConsumer, PowerGenerator, Progression, ResourceNode,
     ResourceType, TileType, Velocity, Weapon, Zone,
 };
 use lithos_world::resources::{
@@ -196,15 +196,12 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
     }
 
     // ── Hostiles ─────────────────────────────────────────────────────────────
-    for _ in 0..100 {
+    for _ in 0..160 {
         let pos = Vec2::new(
             rng.gen_range(-world_half..world_half),
             rng.gen_range(-world_half..world_half),
         );
         let biome = generator.get_biome(pos);
-        if biome == Biome::OuterRim {
-            continue;
-        }
 
         let passable = {
             let tilemap = sim.world.resource::<TileMap>();
@@ -217,39 +214,134 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
             continue;
         }
 
-        let npc_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
-        let health = if biome == Biome::Core { 300.0 } else { 100.0 };
-        let ecs_ent = sim
-            .world
-            .spawn((
-                Position(pos),
-                Velocity(Vec2::ZERO),
-                Zone(ZoneId::Overworld),
-                Npc {
-                    npc_type: NpcType::Hostile,
-                    state: NpcState::Patrol,
-                    target: None,
-                    spawn_pos: pos,
-                    state_entered_tick: 0,
-                },
-                Health {
-                    current: health,
-                    max: health,
-                },
+        // Determine enemy type and stats based on biome.
+        let (npc_type, health, weapon, collider_radius, flying) = match biome {
+            Biome::OuterRim => (
+                NpcType::Rover,
+                60.0,
                 Weapon {
-                    damage: if biome == Biome::Core { 40.0 } else { 15.0 },
-                    projectile_speed: 400.0,
-                    cooldown_seconds: 1.0,
+                    damage: 20.0,
+                    projectile_speed: 300.0,
+                    cooldown_seconds: 0.8,
                     last_fired_time: 0.0,
-                    ammo: 30,
-                    max_ammo: 30,
+                    ammo: 100,
+                    max_ammo: 100,
                 },
-                Collider { radius: 14.0 },
-                Inventory {
-                    items: vec!["scrap".to_string(), "circuit".to_string()],
-                },
-            ))
-            .id();
+                10.0,
+                false,
+            ),
+            Biome::MidZone => {
+                if rng.gen_bool(0.5) {
+                    (
+                        NpcType::Drone,
+                        80.0,
+                        Weapon {
+                            damage: 10.0,
+                            projectile_speed: 500.0,
+                            cooldown_seconds: 0.3,
+                            last_fired_time: 0.0,
+                            ammo: 200,
+                            max_ammo: 200,
+                        },
+                        10.0,
+                        true,
+                    )
+                } else {
+                    (
+                        NpcType::AssaultWalker,
+                        150.0,
+                        Weapon {
+                            damage: 25.0,
+                            projectile_speed: 400.0,
+                            cooldown_seconds: 0.6,
+                            last_fired_time: 0.0,
+                            ammo: 60,
+                            max_ammo: 60,
+                        },
+                        16.0,
+                        false,
+                    )
+                }
+            }
+            Biome::Core => {
+                let roll = rng.gen_range(0.0..1.0);
+                if roll < 0.4 {
+                    (
+                        NpcType::AssaultWalker,
+                        250.0,
+                        Weapon {
+                            damage: 35.0,
+                            projectile_speed: 400.0,
+                            cooldown_seconds: 0.5,
+                            last_fired_time: 0.0,
+                            ammo: 80,
+                            max_ammo: 80,
+                        },
+                        16.0,
+                        false,
+                    )
+                } else if roll < 0.7 {
+                    (
+                        NpcType::SniperWalker,
+                        120.0,
+                        Weapon {
+                            damage: 60.0,
+                            projectile_speed: 900.0,
+                            cooldown_seconds: 2.0,
+                            last_fired_time: 0.0,
+                            ammo: 20,
+                            max_ammo: 20,
+                        },
+                        14.0,
+                        false,
+                    )
+                } else {
+                    (
+                        NpcType::Drone,
+                        100.0,
+                        Weapon {
+                            damage: 15.0,
+                            projectile_speed: 500.0,
+                            cooldown_seconds: 0.3,
+                            last_fired_time: 0.0,
+                            ammo: 200,
+                            max_ammo: 200,
+                        },
+                        10.0,
+                        true,
+                    )
+                }
+            }
+        };
+
+        let npc_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+        let mut ent = sim.world.spawn((
+            Position(pos),
+            Velocity(Vec2::ZERO),
+            Zone(ZoneId::Overworld),
+            Npc {
+                npc_type,
+                state: NpcState::Patrol,
+                target: None,
+                spawn_pos: pos,
+                state_entered_tick: 0,
+            },
+            Health {
+                current: health,
+                max: health,
+            },
+            weapon,
+            Collider {
+                radius: collider_radius,
+            },
+            Inventory {
+                items: vec!["scrap".to_string(), "circuit".to_string()],
+            },
+        ));
+        if flying {
+            ent.insert(Flying);
+        }
+        let ecs_ent = ent.id();
         sim.world
             .resource_mut::<EntityRegistry>()
             .register(npc_id, ecs_ent);
@@ -1524,7 +1616,10 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
             SnapshotEntityType::Player
         } else if let Some(npc) = npc {
             match npc.npc_type {
-                NpcType::Hostile => SnapshotEntityType::Hostile,
+                NpcType::Rover => SnapshotEntityType::Rover,
+                NpcType::Drone => SnapshotEntityType::Drone,
+                NpcType::AssaultWalker => SnapshotEntityType::AssaultWalker,
+                NpcType::SniperWalker => SnapshotEntityType::SniperWalker,
                 NpcType::Trader => SnapshotEntityType::Trader,
             }
         } else if node.is_some() {

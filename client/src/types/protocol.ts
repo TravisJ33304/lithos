@@ -23,6 +23,10 @@ export type SkillBranch =
 export type SnapshotEntityType =
 	| "Player"
 	| "Hostile"
+	| "Rover"
+	| "Drone"
+	| "AssaultWalker"
+	| "SniperWalker"
 	| "Trader"
 	| "ResourceNode"
 	| "Item"

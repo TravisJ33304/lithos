@@ -3,8 +3,8 @@
 use bevy_ecs::prelude::*;
 
 use crate::components::{
-    Collider, Dead, GuardPost, Health, Inventory, Item, LastLoadoutTick, Npc, NpcPath, NpcState,
-    NpcType, Player, Position, PositionHistory, Progression, Projectile, ResourceNode,
+    Collider, Dead, Flying, GuardPost, Health, Inventory, Item, LastLoadoutTick, Npc, NpcPath,
+    NpcState, NpcType, Player, Position, PositionHistory, Progression, Projectile, ResourceNode,
     ResourceType, Velocity, Weapon, Zone,
 };
 use crate::resources::{
@@ -605,9 +605,15 @@ pub fn npc_ai_system(
     >,
     players: Query<&Position, (With<Player>, Without<Dead>)>,
 ) {
-    let speed = config.max_speed * 0.5;
-
     for (mut npc, mut vel, pos, path, guard) in npcs.iter_mut() {
+        let type_speed_mult = match npc.npc_type {
+            NpcType::Rover => 1.2,
+            NpcType::Drone => 1.0,
+            NpcType::AssaultWalker => 0.8,
+            NpcType::SniperWalker => 0.6,
+            NpcType::Trader => 0.5,
+        };
+        let speed = config.max_speed * 0.5 * type_speed_mult;
         let mut nearest_dist_sq = f32::MAX;
         let mut nearest_pos = None;
 
@@ -641,7 +647,7 @@ pub fn npc_ai_system(
             }
             NpcState::Aggro => {
                 if let Some(target) = nearest_pos {
-                    if nearest_dist_sq < 1000.0 * 1000.0 && npc.npc_type == NpcType::Hostile {
+                    if nearest_dist_sq < 1000.0 * 1000.0 && npc.npc_type != NpcType::Trader {
                         // If we have a path, let npc_pathfinding_system handle velocity.
                         if path.as_ref().is_some_and(|p| !p.waypoints.is_empty()) {
                             vel.0 = lithos_protocol::Vec2::ZERO;
@@ -661,7 +667,7 @@ pub fn npc_ai_system(
             NpcState::Patrol | NpcState::Attack => {
                 if let Some(_target) = nearest_pos
                     && nearest_dist_sq < 1000.0 * 1000.0
-                    && npc.npc_type == NpcType::Hostile
+                    && npc.npc_type != NpcType::Trader
                 {
                     npc.state = NpcState::Aggro;
                     npc.state_entered_tick = tick.tick;
@@ -694,10 +700,17 @@ pub fn npc_pathfinding_system(
     config: Res<SimConfig>,
     mut npcs: Query<(&mut Npc, &mut Velocity, &Position, &mut NpcPath), Without<Dead>>,
 ) {
-    let speed = config.max_speed * 0.5;
     let waypoint_reach_dist_sq = 25.0 * 25.0;
 
-    for (_npc, mut vel, pos, mut path) in npcs.iter_mut() {
+    for (npc, mut vel, pos, mut path) in npcs.iter_mut() {
+        let type_speed_mult = match npc.npc_type {
+            NpcType::Rover => 1.2,
+            NpcType::Drone => 1.0,
+            NpcType::AssaultWalker => 0.8,
+            NpcType::SniperWalker => 0.6,
+            NpcType::Trader => 0.5,
+        };
+        let speed = config.max_speed * 0.5 * type_speed_mult;
         if path.waypoints.is_empty() || path.stale {
             vel.0 = lithos_protocol::Vec2::ZERO;
             continue;
@@ -733,14 +746,24 @@ pub fn npc_attack_system(
     tick: Res<TickCounter>,
     config: Res<SimConfig>,
     tilemap: Res<crate::tilemap::TileMap>,
-    mut npcs: Query<(Entity, &mut Npc, &Position, &mut Weapon, &Zone), (With<Npc>, Without<Dead>)>,
+    mut npcs: Query<
+        (
+            Entity,
+            &mut Npc,
+            &Position,
+            &mut Weapon,
+            &Zone,
+            Option<&Flying>,
+        ),
+        (With<Npc>, Without<Dead>),
+    >,
     players: Query<(Entity, &Position, &Zone), (With<Player>, Without<Dead>)>,
 ) {
     let current_time = tick.tick as f64 * config.dt as f64;
     combat_events.spawn_projectiles.clear();
     combat_events.ammo_changes.clear();
 
-    for (_npc_ent, mut npc, pos, mut weapon, zone) in npcs.iter_mut() {
+    for (_npc_ent, mut npc, pos, mut weapon, zone, flying) in npcs.iter_mut() {
         let Some(target_entity_id) = npc.target else {
             continue;
         };
@@ -755,14 +778,21 @@ pub fn npc_attack_system(
             continue;
         }
 
+        let attack_range = match npc.npc_type {
+            NpcType::Rover => 250.0,
+            NpcType::Drone => 500.0,
+            NpcType::AssaultWalker => 400.0,
+            NpcType::SniperWalker => 1200.0,
+            NpcType::Trader => 0.0,
+        };
         let dist_sq = (pos.0 - target_pos.0).length_squared();
-        let attack_range_sq = 600.0 * 600.0; // NPC attack range
+        let attack_range_sq = attack_range * attack_range;
 
         if dist_sq > attack_range_sq {
             continue;
         }
 
-        if !has_line_of_sight(&tilemap, pos.0, target_pos.0, false) {
+        if !has_line_of_sight(&tilemap, pos.0, target_pos.0, flying.is_some()) {
             continue;
         }
 
