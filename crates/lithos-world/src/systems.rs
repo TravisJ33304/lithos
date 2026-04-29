@@ -1457,6 +1457,51 @@ pub fn dynamic_events_system(
     active.active = retained;
 }
 
+/// Apply gameplay effects from active dynamic events.
+#[allow(clippy::type_complexity)]
+pub fn dynamic_event_effects_system(
+    active: Res<ActiveDynamicEvents>,
+    mut combat_events: ResMut<CombatEvents>,
+    registry: Res<EntityRegistry>,
+    tick: Res<TickCounter>,
+    mut players: Query<(Entity, &mut Health, &Zone), (With<Player>, Without<Dead>)>,
+) {
+    for event in active.active.iter() {
+        match event.kind {
+            lithos_protocol::DynamicEventKind::MeteorShower => {
+                // Meteor strikes every 30 ticks (1.5s at 20 TPS) damaging all
+                // players in the Overworld.
+                if tick.tick.is_multiple_of(30) {
+                    for (entity, mut health, zone) in players.iter_mut() {
+                        if zone.0 == lithos_protocol::ZoneId::Overworld {
+                            health.current -= 10.0;
+                            let entity_id = registry
+                                .by_entity
+                                .get(&entity)
+                                .copied()
+                                .unwrap_or(lithos_protocol::EntityId(0));
+                            combat_events.health_changes.push(HealthChangedEvent {
+                                entity_id,
+                                health: health.current,
+                                max_health: health.max,
+                            });
+                        }
+                    }
+                }
+            }
+            lithos_protocol::DynamicEventKind::SolarFlare => {
+                // Solar flares are primarily a client-side minimap disruption.
+                // Server-side we could reduce NPC accuracy, but for now
+                // the event is broadcast-only.
+            }
+            lithos_protocol::DynamicEventKind::CrashedFreighter => {
+                // Crashed freighters are broadcast-only in this milestone.
+                // Future work: spawn a loot container and guarding NPCs.
+            }
+        }
+    }
+}
+
 /// Advance raid warnings into active breaches and close finished raids.
 pub fn raid_state_system(
     mut raids: ResMut<RaidStateStore>,
@@ -1614,5 +1659,92 @@ mod tests {
 
         let zone = world.entity(ecs_entity).get::<Zone>().unwrap();
         assert_eq!(zone.0, ZoneId::AsteroidBase(1));
+    }
+
+    /// Stress test: 100 NPCs + 10 players running 1000 ticks.
+    #[test]
+    fn test_simulation_tick_stress() {
+        use crate::simulation::Simulation;
+
+        let mut sim = Simulation::new();
+
+        // Spawn 10 players.
+        for i in 0..10 {
+            let eid = EntityId(1000 + i);
+            let ecs = sim
+                .world
+                .spawn((
+                    Position(Vec2::new(i as f32 * 50.0, i as f32 * 50.0)),
+                    Velocity(Vec2::ZERO),
+                    PositionHistory::default(),
+                    Player {
+                        id: PlayerId::new(),
+                        auth_subject: None,
+                        faction_id: None,
+                    },
+                    Zone(ZoneId::Overworld),
+                    Health {
+                        current: 100.0,
+                        max: 100.0,
+                    },
+                    Collider { radius: 14.0 },
+                    Inventory { items: vec![] },
+                ))
+                .id();
+            sim.world
+                .resource_mut::<EntityRegistry>()
+                .register(eid, ecs);
+        }
+
+        // Spawn 100 hostile NPCs.
+        for i in 0..100 {
+            let eid = EntityId(2000 + i);
+            let ecs = sim
+                .world
+                .spawn((
+                    Position(Vec2::new(i as f32 * 10.0, i as f32 * 10.0)),
+                    Velocity(Vec2::ZERO),
+                    Zone(ZoneId::Overworld),
+                    Npc {
+                        npc_type: NpcType::Rover,
+                        state: NpcState::Patrol,
+                        target: None,
+                        spawn_pos: Vec2::new(i as f32 * 10.0, i as f32 * 10.0),
+                        state_entered_tick: 0,
+                    },
+                    Health {
+                        current: 60.0,
+                        max: 60.0,
+                    },
+                    Weapon {
+                        damage: 10.0,
+                        projectile_speed: 300.0,
+                        cooldown_seconds: 1.0,
+                        last_fired_time: 0.0,
+                        ammo: 30,
+                        max_ammo: 30,
+                    },
+                    Collider { radius: 10.0 },
+                    Inventory { items: vec![] },
+                ))
+                .id();
+            sim.world
+                .resource_mut::<EntityRegistry>()
+                .register(eid, ecs);
+        }
+
+        // Run 1000 ticks and measure elapsed time.
+        let start = std::time::Instant::now();
+        for _ in 0..1000 {
+            sim.tick();
+        }
+        let elapsed = start.elapsed();
+
+        // Assert the whole simulation stays under 5 seconds in debug mode.
+        assert!(
+            elapsed.as_secs_f64() < 5.0,
+            "1000 ticks with 110 entities took too long: {:?}",
+            elapsed
+        );
     }
 }

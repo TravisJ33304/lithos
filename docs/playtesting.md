@@ -1,6 +1,6 @@
 # Lithos Playtesting Document
 
-**Version:** v0.6.0 (Post-Phase 6)  
+**Version:** v0.7.0 (Phase 7 — World of Stone & Steel)  
 **Date:** 2026-04-29  
 **Target:** Browser-based client connecting to local Dedicated Game Server  
 **Prerequisites:** `cargo`, `node` 22+, PostgreSQL running (or Docker stack)
@@ -155,17 +155,22 @@ where `123` is your faction ID. Use the **same faction ID** on both clients to t
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 4.1.1 | Approach a red "Automata" NPC in Outer Rim | NPC enters **Aggro** state and chases you. |
-| 4.1.2 | Move far away (>1000 units) | NPC returns to spawn (Patrol state). |
-| 4.1.3 | Engage Core-area NPCs | They have 300 HP and deal 40 damage per hit (vs 100 HP / 15 damage in Outer Rim). |
-| 4.1.4 | Let an NPC kill you | You die, inventory drops. NPC continues patrolling. |
+| 4.1.1 | Approach a **Rover** (red, fast) in Outer Rim | Rover enters **Aggro** and chases at high speed. Short attack range (~250). |
+| 4.1.2 | Approach a **Drone** (flying, yellow) in Mid-Zone | Drone bypasses ground obstacles. Fires light lasers at ~500 range. |
+| 4.1.3 | Approach an **Assault Walker** (large, orange) in Mid-Zone | Aggressive pusher. Moderate range (~400), higher damage. |
+| 4.1.4 | Approach a **Sniper Walker** (tall, cyan) in Core | Engages from very long range (~1200). Attempts to maintain distance. |
+| 4.1.5 | Approach a **Heavy Flamethrower** (bulky, dark red) in Core | Very short range (~200). Applies **OnFire** DOT (3s, 5 dmg/tick). |
+| 4.1.6 | Approach the **Core Warden** boss at (0,0) | Massive entity (40 radius, 5000 HP). Fires 3 spread projectiles. Spawns Rover adds every ~15s. |
+| 4.1.7 | Move far away (>1000 units) from any hostile | NPC returns to spawn (Patrol state). |
+| 4.1.8 | Let an NPC kill you | You die, inventory drops. NPC continues patrolling. |
 
 ### 4.2 Dynamic Events
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 4.2.1 | Wait in Overworld for ~45 seconds (900 ticks) | A system chat message announces a dynamic event (Meteor Shower, Solar Flare, or Crashed Freighter). |
-| 4.2.2 | Wait another ~15 seconds | Event ends. No crash. |
+| 4.2.2 | During **Meteor Shower**, remain in Overworld | Every ~1.5 seconds all Overworld players take 10 damage from meteor strikes. Health updates. |
+| 4.2.3 | Wait another ~15 seconds | Event ends. No crash. |
 
 ### 4.3 Raids
 
@@ -175,11 +180,19 @@ where `123` is your faction ID. Use the **same faction ID** on both clients to t
 | 4.3.2 | Wait for warning to expire | `RaidStarted` message sent. Breach becomes active. |
 | 4.3.3 | Wait for breach duration to expire | `RaidEnded` message sent. Raid state cleaned up. |
 
-### 4.4 Lag Compensation
+### 4.4 Tilemap & Pathfinding
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 4.4.1 | Have Player A run in a straight line. Player B fires slightly behind Player A's current rendered position. | Hit still registers because server rewinds Player A's position history based on Player B's reported latency. |
+| 4.4.1 | Explore the Overworld | Terrain tiles render with distinct colors (green=Empty, grey=Rock, brown=DeepRavine, yellow=AsteroidField, purple=AutomataSpire). |
+| 4.4.2 | Observe tile borders | Enclosed-ceiling tiles show a dark border. Open tiles have no border. |
+| 4.4.3 | Watch NPCs navigate around obstacles | Hostile NPCs pathfind around Rock/DeepRavine tiles using A*. Drones fly over ground obstacles. |
+
+### 4.5 Lag Compensation
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 4.5.1 | Have Player A run in a straight line. Player B fires slightly behind Player A's current rendered position. | Hit still registers because server rewinds Player A's position history based on Player B's reported latency. |
 
 ---
 
@@ -208,6 +221,7 @@ where `123` is your faction ID. Use the **same faction ID** on both clients to t
 | Client FPS | Observe FPS counter | > 45 FPS on modern hardware. |
 | Memory growth | Run server for 30 minutes with 2 players | RSS growth < 50 MB. No OOM. |
 | Snapshot size | Connect 2 clients, observe tick text | Snapshot processing does not cause client stutter. |
+| Automated stress test | `cargo test --workspace` runs `test_simulation_tick_stress` | 1000 ticks with 110 entities completes in < 5 seconds in debug mode. |
 
 ---
 
@@ -218,9 +232,10 @@ The following features are **not** in the current build. Do **not** report them 
 - **Breach Generator crafting & warp signature scanning** (raid initiation is currently admin/test-only).
 - **Faction management UI** (faction assignment is done via dev token `username#faction_id`).
 - **Sound effects** (Howler.js integration planned for polish phase).
-- **NPC ranged attacks** (NPCs chase but do not shoot; damage is applied on contact in future updates).
 - **Hydroponics / drones** (stretch goals).
 - **Asteroid base denial without faction** is implemented server-side but UI messaging is minimal.
+- **Crashed Freighter loot spawning** (event is broadcast-only; no physical container or guards spawn yet).
+- **Solar Flare gameplay effects** (client minimap disruption only; no server-side electronic weapon disable yet).
 
 ---
 

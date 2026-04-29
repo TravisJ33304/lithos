@@ -78,6 +78,7 @@ impl Simulation {
                 systems::trade_system,
                 systems::progression_system,
                 systems::dynamic_events_system,
+                systems::dynamic_event_effects_system,
                 systems::raid_state_system,
             )
                 .chain()
