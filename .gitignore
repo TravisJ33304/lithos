@@ -24,9 +24,6 @@ flamegraph*.svg
 server.log
 server.pid
 
-# Local drafts (track in git after removing this line if you want it versioned)
-implementation_plan.md
-
 # OS files
 .DS_Store
 Thumbs.db
