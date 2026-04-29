@@ -72,6 +72,7 @@ impl Simulation {
             (
                 systems::npc_pathfinding_system,
                 systems::npc_attack_system,
+                systems::fire_damage_system,
                 systems::trader_market_system,
                 systems::mining_system,
                 systems::trade_system,

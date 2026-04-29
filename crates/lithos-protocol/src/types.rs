@@ -142,6 +142,8 @@ pub enum SnapshotEntityType {
     Drone,
     AssaultWalker,
     SniperWalker,
+    HeavyFlamethrower,
+    CoreWarden,
     Trader,
     ResourceNode,
     Item,

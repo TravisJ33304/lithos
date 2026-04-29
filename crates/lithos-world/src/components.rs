@@ -91,6 +91,8 @@ pub enum NpcType {
     Drone,
     AssaultWalker,
     SniperWalker,
+    HeavyFlamethrower,
+    CoreWarden,
     Trader,
 }
 
@@ -118,6 +120,22 @@ pub struct NpcPath {
 /// Marks an entity as capable of flying (bypasses ground obstacles).
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Flying;
+
+/// Applies fire damage-over-time to an entity.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct OnFire {
+    /// Remaining ticks before the fire expires.
+    pub remaining_ticks: u32,
+    /// Damage dealt per tick.
+    pub damage_per_tick: f32,
+}
+
+/// Tracks boss phase for unique enemies like the Core Warden.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct BossPhase {
+    pub phase: u32,
+    pub last_add_spawn_tick: u64,
+}
 
 /// Marks an NPC as guarding a specific location.
 #[derive(Component, Debug, Clone, Copy)]

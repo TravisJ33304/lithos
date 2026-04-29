@@ -3,9 +3,9 @@
 use bevy_ecs::prelude::*;
 
 use crate::components::{
-    Collider, Dead, Flying, GuardPost, Health, Inventory, Item, LastLoadoutTick, Npc, NpcPath,
-    NpcState, NpcType, Player, Position, PositionHistory, Progression, Projectile, ResourceNode,
-    ResourceType, Velocity, Weapon, Zone,
+    BossPhase, Collider, Dead, Flying, GuardPost, Health, Inventory, Item, LastLoadoutTick, Npc,
+    NpcPath, NpcState, NpcType, OnFire, Player, Position, PositionHistory, Progression, Projectile,
+    ResourceNode, ResourceType, Velocity, Weapon, Zone,
 };
 use crate::resources::{
     ActiveDynamicEvents, AmmoChangedEvent, CombatEvents, DynamicEventBus, EntityRegistry,
@@ -611,6 +611,8 @@ pub fn npc_ai_system(
             NpcType::Drone => 1.0,
             NpcType::AssaultWalker => 0.8,
             NpcType::SniperWalker => 0.6,
+            NpcType::HeavyFlamethrower => 0.5,
+            NpcType::CoreWarden => 0.3,
             NpcType::Trader => 0.5,
         };
         let speed = config.max_speed * 0.5 * type_speed_mult;
@@ -708,6 +710,8 @@ pub fn npc_pathfinding_system(
             NpcType::Drone => 1.0,
             NpcType::AssaultWalker => 0.8,
             NpcType::SniperWalker => 0.6,
+            NpcType::HeavyFlamethrower => 0.5,
+            NpcType::CoreWarden => 0.3,
             NpcType::Trader => 0.5,
         };
         let speed = config.max_speed * 0.5 * type_speed_mult;
@@ -754,6 +758,7 @@ pub fn npc_attack_system(
             &mut Weapon,
             &Zone,
             Option<&Flying>,
+            Option<&mut BossPhase>,
         ),
         (With<Npc>, Without<Dead>),
     >,
@@ -763,14 +768,14 @@ pub fn npc_attack_system(
     combat_events.spawn_projectiles.clear();
     combat_events.ammo_changes.clear();
 
-    for (_npc_ent, mut npc, pos, mut weapon, zone, flying) in npcs.iter_mut() {
+    for (_npc_ent, mut npc, pos, mut weapon, zone, flying, mut boss_phase) in npcs.iter_mut() {
         let Some(target_entity_id) = npc.target else {
             continue;
         };
         let Some(&target_ecs) = registry.by_id.get(&target_entity_id) else {
             continue;
         };
-        let Ok((_, target_pos, target_zone)) = players.get(target_ecs) else {
+        let Ok((player_ent, target_pos, target_zone)) = players.get(target_ecs) else {
             continue;
         };
 
@@ -783,6 +788,8 @@ pub fn npc_attack_system(
             NpcType::Drone => 500.0,
             NpcType::AssaultWalker => 400.0,
             NpcType::SniperWalker => 1200.0,
+            NpcType::HeavyFlamethrower => 200.0,
+            NpcType::CoreWarden => 800.0,
             NpcType::Trader => 0.0,
         };
         let dist_sq = (pos.0 - target_pos.0).length_squared();
@@ -806,34 +813,124 @@ pub fn npc_attack_system(
         weapon.last_fired_time = current_time;
         weapon.ammo -= 1;
 
-        let dir = (target_pos.0 - pos.0).normalize();
-        let proj_vel = dir * weapon.projectile_speed;
-        let proj_pos = pos.0 + dir * 20.0;
+        match npc.npc_type {
+            NpcType::HeavyFlamethrower => {
+                commands.entity(player_ent).insert(OnFire {
+                    remaining_ticks: 60, // 3 seconds at 20 TPS
+                    damage_per_tick: 5.0,
+                });
+            }
+            NpcType::CoreWarden => {
+                // Spawn adds periodically.
+                if let Some(ref mut bp) = boss_phase
+                    && tick.tick >= bp.last_add_spawn_tick + 300
+                {
+                    bp.last_add_spawn_tick = tick.tick;
+                    for offset in [
+                        lithos_protocol::Vec2::new(40.0, 0.0),
+                        lithos_protocol::Vec2::new(-40.0, 0.0),
+                    ] {
+                        let add_pos = pos.0 + offset;
+                        let add_id = registry.next_entity_id();
+                        let add_ent = commands
+                            .spawn((
+                                Position(add_pos),
+                                Velocity(lithos_protocol::Vec2::ZERO),
+                                Zone(zone.0),
+                                Npc {
+                                    npc_type: NpcType::Rover,
+                                    state: NpcState::Aggro,
+                                    target: npc.target,
+                                    spawn_pos: add_pos,
+                                    state_entered_tick: tick.tick,
+                                },
+                                Health {
+                                    current: 60.0,
+                                    max: 60.0,
+                                },
+                                Weapon {
+                                    damage: 15.0,
+                                    projectile_speed: 300.0,
+                                    cooldown_seconds: 1.0,
+                                    last_fired_time: 0.0,
+                                    ammo: 50,
+                                    max_ammo: 50,
+                                },
+                                Collider { radius: 10.0 },
+                                Inventory {
+                                    items: vec!["scrap".to_string()],
+                                },
+                            ))
+                            .id();
+                        registry.register(add_id, add_ent);
+                    }
+                }
+                // Fire 3 spread projectiles.
+                let base_dir = (target_pos.0 - pos.0).normalize();
+                for angle in [-0.26_f32, 0.0, 0.26_f32] {
+                    let cos = angle.cos();
+                    let sin = angle.sin();
+                    let rot = lithos_protocol::Vec2::new(
+                        base_dir.x * cos - base_dir.y * sin,
+                        base_dir.x * sin + base_dir.y * cos,
+                    );
+                    let proj_vel = rot * weapon.projectile_speed;
+                    let proj_pos = pos.0 + rot * 20.0;
+                    let new_id = registry.next_entity_id();
+                    let new_ecs_entity = commands
+                        .spawn((
+                            Position(proj_pos),
+                            Velocity(proj_vel),
+                            Zone(zone.0),
+                            Projectile {
+                                damage: weapon.damage,
+                                owner: target_entity_id,
+                                spawn_time: current_time,
+                                lifespan_seconds: 3.0,
+                                rewind_ticks: 0,
+                            },
+                            Collider { radius: 8.0 },
+                        ))
+                        .id();
+                    registry.register(new_id, new_ecs_entity);
+                    combat_events.spawn_projectiles.push(SpawnProjectileEvent {
+                        entity_id: new_id,
+                        position: proj_pos,
+                        velocity: proj_vel,
+                    });
+                }
+            }
+            _ => {
+                let dir = (target_pos.0 - pos.0).normalize();
+                let proj_vel = dir * weapon.projectile_speed;
+                let proj_pos = pos.0 + dir * 20.0;
 
-        let new_id = registry.next_entity_id();
-        let new_ecs_entity = commands
-            .spawn((
-                Position(proj_pos),
-                Velocity(proj_vel),
-                Zone(zone.0),
-                Projectile {
-                    damage: weapon.damage,
-                    owner: target_entity_id, // Using target as owner reference
-                    spawn_time: current_time,
-                    lifespan_seconds: 2.0,
-                    rewind_ticks: 0,
-                },
-                Collider { radius: 5.0 },
-            ))
-            .id();
+                let new_id = registry.next_entity_id();
+                let new_ecs_entity = commands
+                    .spawn((
+                        Position(proj_pos),
+                        Velocity(proj_vel),
+                        Zone(zone.0),
+                        Projectile {
+                            damage: weapon.damage,
+                            owner: target_entity_id,
+                            spawn_time: current_time,
+                            lifespan_seconds: 2.0,
+                            rewind_ticks: 0,
+                        },
+                        Collider { radius: 5.0 },
+                    ))
+                    .id();
 
-        registry.register(new_id, new_ecs_entity);
+                registry.register(new_id, new_ecs_entity);
 
-        combat_events.spawn_projectiles.push(SpawnProjectileEvent {
-            entity_id: new_id,
-            position: proj_pos,
-            velocity: proj_vel,
-        });
+                combat_events.spawn_projectiles.push(SpawnProjectileEvent {
+                    entity_id: new_id,
+                    position: proj_pos,
+                    velocity: proj_vel,
+                });
+            }
+        }
 
         combat_events.ammo_changes.push(AmmoChangedEvent {
             entity_id: target_entity_id,
@@ -842,6 +939,34 @@ pub fn npc_attack_system(
         });
 
         npc.state = NpcState::Attack;
+    }
+}
+
+/// Applies fire damage-over-time to burning entities.
+pub fn fire_damage_system(
+    mut commands: Commands,
+    mut combat_events: ResMut<CombatEvents>,
+    registry: Res<EntityRegistry>,
+    mut burners: Query<(Entity, &mut OnFire, &mut Health), Without<Dead>>,
+) {
+    for (entity, mut on_fire, mut health) in burners.iter_mut() {
+        health.current -= on_fire.damage_per_tick;
+        on_fire.remaining_ticks -= 1;
+
+        let entity_id = registry
+            .by_entity
+            .get(&entity)
+            .copied()
+            .unwrap_or(lithos_protocol::EntityId(0));
+        combat_events.health_changes.push(HealthChangedEvent {
+            entity_id,
+            health: health.current,
+            max_health: health.max,
+        });
+
+        if on_fire.remaining_ticks == 0 {
+            commands.entity(entity).remove::<OnFire>();
+        }
     }
 }
 

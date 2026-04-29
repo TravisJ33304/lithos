@@ -81,6 +81,8 @@ function normalizeSnapshotEntityType(t: unknown): SnapshotEntityType {
 		"Drone",
 		"AssaultWalker",
 		"SniperWalker",
+		"HeavyFlamethrower",
+		"CoreWarden",
 		"Trader",
 		"ResourceNode",
 		"Item",

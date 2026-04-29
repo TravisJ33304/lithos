@@ -27,6 +27,8 @@ export type SnapshotEntityType =
 	| "Drone"
 	| "AssaultWalker"
 	| "SniperWalker"
+	| "HeavyFlamethrower"
+	| "CoreWarden"
 	| "Trader"
 	| "ResourceNode"
 	| "Item"

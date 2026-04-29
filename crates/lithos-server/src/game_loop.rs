@@ -15,9 +15,9 @@ use lithos_protocol::{
     ServerMessage, SkillBranch, Vec2, ZoneId, codec,
 };
 use lithos_world::components::{
-    BaseTile, Collider, Flying, Health, Inventory, LastLoadoutTick, Npc, NpcState, NpcType, Oxygen,
-    Player, Position, PositionHistory, PowerConsumer, PowerGenerator, Progression, ResourceNode,
-    ResourceType, TileType, Velocity, Weapon, Zone,
+    BaseTile, BossPhase, Collider, Flying, Health, Inventory, LastLoadoutTick, Npc, NpcState,
+    NpcType, Oxygen, Player, Position, PositionHistory, PowerConsumer, PowerGenerator, Progression,
+    ResourceNode, ResourceType, TileType, Velocity, Weapon, Zone,
 };
 use lithos_world::resources::{
     ChatEvent, ChatEvents, EntityRegistry, FactionVaults, FireRequest, InputQueue,
@@ -265,7 +265,7 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
             }
             Biome::Core => {
                 let roll = rng.gen_range(0.0..1.0);
-                if roll < 0.4 {
+                if roll < 0.35 {
                     (
                         NpcType::AssaultWalker,
                         250.0,
@@ -280,7 +280,7 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                         16.0,
                         false,
                     )
-                } else if roll < 0.7 {
+                } else if roll < 0.6 {
                     (
                         NpcType::SniperWalker,
                         120.0,
@@ -293,6 +293,21 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                             max_ammo: 20,
                         },
                         14.0,
+                        false,
+                    )
+                } else if roll < 0.8 {
+                    (
+                        NpcType::HeavyFlamethrower,
+                        400.0,
+                        Weapon {
+                            damage: 8.0,
+                            projectile_speed: 200.0,
+                            cooldown_seconds: 0.1,
+                            last_fired_time: 0.0,
+                            ammo: 500,
+                            max_ammo: 500,
+                        },
+                        18.0,
                         false,
                     )
                 } else {
@@ -345,6 +360,54 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
         sim.world
             .resource_mut::<EntityRegistry>()
             .register(npc_id, ecs_ent);
+    }
+
+    // ── Core Warden (boss) ───────────────────────────────────────────────────
+    {
+        let warden_pos = Vec2::new(0.0, 0.0);
+        let warden_id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+        let warden_ent = sim
+            .world
+            .spawn((
+                Position(warden_pos),
+                Velocity(Vec2::ZERO),
+                Zone(ZoneId::Overworld),
+                Npc {
+                    npc_type: NpcType::CoreWarden,
+                    state: NpcState::Patrol,
+                    target: None,
+                    spawn_pos: warden_pos,
+                    state_entered_tick: 0,
+                },
+                Health {
+                    current: 5000.0,
+                    max: 5000.0,
+                },
+                Weapon {
+                    damage: 80.0,
+                    projectile_speed: 250.0,
+                    cooldown_seconds: 1.5,
+                    last_fired_time: 0.0,
+                    ammo: 1000,
+                    max_ammo: 1000,
+                },
+                Collider { radius: 40.0 },
+                Inventory {
+                    items: vec![
+                        "logic_core".to_string(),
+                        "plasma_cell".to_string(),
+                        "high_tier_component".to_string(),
+                    ],
+                },
+                BossPhase {
+                    phase: 1,
+                    last_add_spawn_tick: 0,
+                },
+            ))
+            .id();
+        sim.world
+            .resource_mut::<EntityRegistry>()
+            .register(warden_id, warden_ent);
     }
 
     // ── Traders ──────────────────────────────────────────────────────────────
@@ -1620,6 +1683,8 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
                 NpcType::Drone => SnapshotEntityType::Drone,
                 NpcType::AssaultWalker => SnapshotEntityType::AssaultWalker,
                 NpcType::SniperWalker => SnapshotEntityType::SniperWalker,
+                NpcType::HeavyFlamethrower => SnapshotEntityType::HeavyFlamethrower,
+                NpcType::CoreWarden => SnapshotEntityType::CoreWarden,
                 NpcType::Trader => SnapshotEntityType::Trader,
             }
         } else if node.is_some() {
