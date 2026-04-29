@@ -569,6 +569,45 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				>["AmmoChanged"],
 			};
 		}
+		case "WorldMapChunk": {
+			if (Array.isArray(payload) && payload.length >= 3) {
+				const tilesRaw = payload[2];
+				if (!Array.isArray(tilesRaw)) throw new Error("WorldMapChunk tiles");
+				const tiles = tilesRaw.map((t: unknown) => {
+					if (Array.isArray(t) && t.length >= 3) {
+						return {
+							terrain: asString(t[0]),
+							ceiling: asString(t[1]),
+							height: asNumber(t[2]),
+						};
+					}
+					if (isRecord(t)) {
+						return {
+							terrain: asString(t.terrain),
+							ceiling: asString(t.ceiling),
+							height: asNumber(t.height),
+						};
+					}
+					throw new Error("invalid TileData");
+				});
+				return {
+					WorldMapChunk: {
+						chunk_x: asNumber(payload[0]),
+						chunk_y: asNumber(payload[1]),
+						tiles,
+					},
+				};
+			}
+			if (isRecord(payload) && "chunk_x" in payload) {
+				return {
+					WorldMapChunk: payload as unknown as Extract<
+						ServerMessage,
+						{ WorldMapChunk: unknown }
+					>["WorldMapChunk"],
+				};
+			}
+			throw new Error("invalid WorldMapChunk payload");
+		}
 		case "Disconnect": {
 			if (Array.isArray(payload)) {
 				return { Disconnect: { reason: singleStringArray(payload) } };

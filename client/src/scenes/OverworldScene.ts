@@ -617,7 +617,7 @@ export class OverworldScene extends Phaser.Scene {
 					this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
 				)
 			) {
-				this.net.send("Respawn");
+				this.net.send({ Respawn: null });
 				this.isDead = false;
 				this.healthText.setColor("#ff3333");
 			}

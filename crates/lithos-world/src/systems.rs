@@ -1084,6 +1084,7 @@ fn xp_to_next_level(level: u32) -> u32 {
 pub fn mining_system(
     mut mine_queue: ResMut<MineQueue>,
     mut mining_events: ResMut<MiningEvents>,
+    mut combat_events: ResMut<CombatEvents>,
     registry: Res<EntityRegistry>,
     mut players: Query<(&mut Inventory, &Position, &Zone), (With<Player>, Without<Dead>)>,
     mut resources: Query<(Entity, &mut ResourceNode, &Position, &Zone), Without<Dead>>,
@@ -1168,6 +1169,19 @@ pub fn mining_system(
             ResourceType::BioMass => "biomass",
         };
         inventory.items.push(item_name.to_string());
+
+        combat_events.inventory_updates.push(InventoryUpdatedEvent {
+            entity_id: req.entity_id,
+            items_json: format!(
+                "[{}]",
+                inventory
+                    .items
+                    .iter()
+                    .map(|s| format!("\"{}\"", s))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        });
 
         if let Some(&res_id) = registry.by_entity.get(&target_ecs) {
             mining_events.events.push(MiningEvent {
