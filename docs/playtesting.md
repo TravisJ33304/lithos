@@ -92,19 +92,50 @@ where `123` is your faction ID. Use the **same faction ID** on both clients to t
 
 ### 3.3 Mining & Extraction Progression
 
+Resource nodes spawn in veins tied to terrain type and biome:
+
+| Resource | Terrain | Biomes |
+|----------|---------|--------|
+| `iron` | Rock, DeepRavine | Outer Rim, Mid-Zone |
+| `copper` | Rock | Outer Rim, Mid-Zone |
+| `silica` | AsteroidField | Mid-Zone |
+| `uranium` | DeepRavine, AutomataSpire | Mid-Zone, Core |
+| `plutonium` | AutomataSpire | Core |
+| `biomass` | Empty | Outer Rim, Mid-Zone |
+
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 3.3.1 | Select slot `1` (mining laser) on hotbar. Approach a grey "Ore" node. Left-click. | Node yields 1 unit per click. Inventory gains `iron`, `titanium`, or `lithos` depending on biome. XP text updates (e.g. "Extraction Lv.1 (5 XP)"). Green "+5 Extraction XP" flash appears. |
+| 3.3.1 | Select slot `1` (mining laser) on hotbar. Approach a grey "Ore" node. Left-click. | Node yields 1 unit per click. Inventory gains the node's resource type. XP text updates (e.g. "Extraction Lv.1 (5 XP)"). Green "+5 Extraction XP" flash appears. |
 | 3.3.2 | Continue mining until node yield is depleted | Node sprite disappears from world. "ResourceDepleted" handled gracefully (no errors). |
 | 3.3.3 | Attempt to mine without mining laser selected (slot 0) | Nothing happens. No server crash. |
 | 3.3.4 | Mine 20+ times | Extraction level increases from 1 to 2 once XP threshold is crossed. |
 
 ### 3.4 Crafting & Fabrication
 
+| Level | Recipe | Inputs |
+|-------|--------|--------|
+| 1 | `iron_plate` | `2× iron` |
+| 1 | `copper_wire` | `2× copper` |
+| 1 | `circuit` | `copper_wire + iron_plate` |
+| 1 | `glass` | `2× silica` |
+| 1 | `medkit` | `biomass + glass` |
+| 1 | `bio_fuel` | `2× biomass` |
+| 1 | `wall_segment` | `2× iron_plate` |
+| 1 | `door` | `iron_plate + circuit` |
+| 1 | `workbench` | `2× iron_plate + circuit` |
+| 2 | `generator` | `battery + titanium_plate + circuit` |
+| 3 | `titanium_plate` | `2× titanium` |
+| 3 | `battery` | `titanium_plate + circuit` |
+| 3 | `shield_module` | `titanium_plate + battery + circuit` |
+| 5 | `uranium_core` | `2× uranium` |
+| 5 | `plutonium_core` | `2× plutonium` |
+| 5 | `warp_drive` | `uranium_core + battery + titanium_plate` |
+| 5 | `breach_generator` | `plutonium_core + shield_module + warp_drive` |
+
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 3.4.1 | Open crafting panel with `C` | Panel shows recipe list with inputs. |
-| 3.4.2 | Click **iron_plate** recipe | If inventory contains `2× iron`, items are consumed and `iron_plate` is added. Inventory updates. "+10 Fabrication XP" is gained internally. |
+| 3.4.1 | Open crafting panel with `C` | Panel shows recipe list with inputs and required levels. |
+| 3.4.2 | Click **iron_plate** recipe | If inventory contains `2× iron`, items are consumed and `iron_plate` is added. Inventory updates. XP is gained internally. |
 | 3.4.3 | Attempt to craft **titanium_plate** at Fabrication Lv.1 | Red flash: "Craft denied: requires Fabrication level 3". No items consumed. |
 | 3.4.4 | Close panel with `[CLOSE]` or `C` | Panel disappears cleanly. |
 
@@ -130,9 +161,22 @@ where `123` is your faction ID. Use the **same faction ID** on both clients to t
 
 ### 3.7 Economy & Trading
 
+Trader NPCs (green "Trader" labels) sell the following items with fluctuating prices:
+
+| Item | Base Price |
+|------|-----------|
+| `iron` | 10 |
+| `copper` | 12 |
+| `silica` | 15 |
+| `biomass` | 8 |
+| `titanium` | 22 |
+| `uranium` | 60 |
+| `plutonium` | 75 |
+| `medkit` | 45 |
+
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 3.7.1 | Locate a green "Trader" NPC in Overworld. Click on it. | Trade UI opens. Shows BUY/SELL prices for iron, titanium, lithos, medkit. Shows faction credits. |
+| 3.7.1 | Locate a green "Trader" NPC in Overworld. Click on it. | Trade UI opens. Shows BUY/SELL prices for all trader items. Shows faction credits. |
 | 3.7.2 | Click **SELL** on an item you own | Item removed from inventory. Faction credits increase. Price scalar adjusts (±0.02). |
 | 3.7.3 | Click **BUY** on an item | Item added to inventory. Faction credits decrease. |
 | 3.7.4 | Attempt to buy with insufficient faction credits | Red flash: "Trade failed: insufficient faction credits". |
@@ -146,6 +190,14 @@ where `123` is your faction ID. Use the **same faction ID** on both clients to t
 | 3.8.2 | Type more than 100 characters | Input is truncated at 100 characters. |
 | 3.8.3 | Press `Backspace` while typing | Characters are deleted correctly. |
 | 3.8.4 | Press `Enter` with empty input | Chat closes. No empty message sent. |
+
+### 3.9 World Exploration & Points of Interest
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 3.9.1 | Explore the Overworld | Terrain tiles render with distinct colors (green=Empty, grey=Rock, brown=DeepRavine, yellow=AsteroidField, purple=AutomataSpire). Height variations visible via brightness. |
+| 3.9.2 | Look for POIs in Mid-Zone / Core | Fabrication Plants spawn as large colliders (~30 radius). Comms Arrays spawn on elevated terrain (>150 height). |
+| 3.9.3 | Look for Salvage Sites in Mid-Zone / Core | Salvage sites ("rusted_husk" or "abandoned_mech") spawn in Empty / AsteroidField terrain. Not yet interactable. |
 
 ---
 
@@ -210,6 +262,9 @@ where `123` is your faction ID. Use the **same faction ID** on both clients to t
 | R8 | Chat empty/whitespace | Press Enter, type spaces, press Enter | Message is not sent. |
 | R9 | Mine depleted node | Click on a node that another player just depleted | No item gained. No crash. |
 | R10 | Respawn while alive | Press `R` while alive | Nothing happens. Respawn only works when dead. |
+| R11 | NPC pathfinding stress | Lure 5+ hostile NPCs around Rock/DeepRavine tiles | NPCs pathfind around obstacles using A*. No server lag spike. |
+| R12 | OnFire DOT persistence | Get hit by Heavy Flamethrower, then die and respawn | OnFire component is removed on death. No damage after respawn. |
+| R13 | Boss add spawning | Engage Core Warden for >15 seconds | Rover adds spawn near the boss. Adds are registered in EntityRegistry and appear in snapshots. |
 
 ---
 
@@ -236,6 +291,11 @@ The following features are **not** in the current build. Do **not** report them 
 - **Asteroid base denial without faction** is implemented server-side but UI messaging is minimal.
 - **Crashed Freighter loot spawning** (event is broadcast-only; no physical container or guards spawn yet).
 - **Solar Flare gameplay effects** (client minimap disruption only; no server-side electronic weapon disable yet).
+- **Titanium mining** — titanium is sold by traders but does not spawn as a mineable resource node. Must be purchased.
+- **Salvage Site interaction** — salvage sites spawn in the world but cannot yet be harvested (requires `salvage_torch` tool and interaction system).
+- **Loot Containers & Hacking** — `LootContainer` and `HackingTarget` components exist but no entities spawn with them yet.
+- **Fabrication Plant bonus crafting** — POIs spawn but the `tier_bonus` crafting override is not yet wired to the crafting system.
+- **Comms Array hacking** — arrays spawn but cannot be interacted with yet.
 
 ---
 
@@ -268,3 +328,6 @@ If you find an issue, please file a ticket with:
 - [ ] Zone transfer works reliably for 2+ players.
 - [ ] Death, inventory drop, and respawn cycle is coherent.
 - [ ] Base structures persist across reconnects.
+- [ ] Tilemap generates deterministically and renders correctly for all connected clients.
+- [ ] NPC pathfinding does not cause tick budget overflow with 100+ entities.
+- [ ] All 6 resource types spawn in correct biomes and are mineable.
