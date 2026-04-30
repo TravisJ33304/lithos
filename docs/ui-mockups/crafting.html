@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lithos — Crafting Panel Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-deep: #0a0e1a;
+  --bg-panel: #101624;
+  --bg-surface: #151d30;
+  --bg-hover: #1a2640;
+  --border-main: #1e2a45;
+  --border-accent: #2a3a60;
+  --border-warn: #554433;
+  --text-primary: #e8eaed;
+  --text-secondary: #7a8aa6;
+  --text-dim: #4a5a70;
+  --highlight: #58a6ff;
+  --craftable: #2ea043;
+  --craftable-dim: #1a4a2a;
+  --locked: #ff4422;
+  --locked-dim: #4a1a1a;
+  --danger: #dd3333;
+  --warning: #ffaa33;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg-deep);
+  font-family: 'Rajdhani', sans-serif;
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+/* ——— PANEL ——— */
+#panel {
+  width: 520px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-accent);
+  position: relative;
+  overflow: hidden;
+}
+#panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--highlight), transparent 80%);
+}
+
+/* ——— HEADER ——— */
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border-main);
+}
+#title {
+  font-family: 'Orbitron', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--highlight);
+}
+#title-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  margin-left: 8px;
+}
+#close-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--danger);
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+#close-btn:hover { border-color: var(--danger); }
+
+/* ——— SEARCH ——— */
+#search-row {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-main);
+}
+#search-input {
+  width: 100%;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border-main);
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+#search-input:focus { border-color: var(--highlight); }
+#search-input::placeholder { color: var(--text-dim); }
+
+/* ——— TABS ——— */
+#tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-main);
+  background: rgba(0,0,0,0.2);
+}
+.tab {
+  flex: 1;
+  padding: 8px 0;
+  text-align: center;
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.tab:hover { color: var(--text-secondary); background: rgba(255,255,255,0.02); }
+.tab.active {
+  color: var(--highlight);
+  border-bottom-color: var(--highlight);
+  background: rgba(88,166,255,0.06);
+}
+
+/* ——— RECIPE LIST ——— */
+#recipes {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px;
+}
+#recipes::-webkit-scrollbar { width: 4px; }
+#recipes::-webkit-scrollbar-track { background: var(--bg-deep); }
+#recipes::-webkit-scrollbar-thumb { background: var(--border-main); }
+
+.recipe-group-label {
+  font-family: 'Orbitron', monospace;
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  padding: 8px 14px 4px;
+}
+
+.recipe-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.recipe-card:hover { background: var(--bg-hover); border-color: var(--border-main); }
+.recipe-card.craftable { border-color: var(--craftable-dim); }
+.recipe-card.craftable:hover { border-color: var(--craftable); background: rgba(46,160,67,0.06); }
+.recipe-card.locked { opacity: 0.55; }
+.recipe-card.locked:hover { border-color: var(--locked-dim); }
+
+.recipe-icon {
+  width: 36px; height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border-main);
+  flex-shrink: 0;
+}
+.recipe-card.craftable .recipe-icon { border-color: var(--craftable); color: var(--craftable); }
+.recipe-card.locked .recipe-icon { border-color: var(--locked); color: var(--locked); }
+
+.recipe-info { flex: 1; min-width: 0; }
+.recipe-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.recipe-inputs {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+.recipe-inputs .have { color: var(--craftable); }
+.recipe-inputs .need { color: var(--locked); }
+
+.recipe-status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.recipe-status .tag {
+  padding: 2px 6px;
+  border: 1px solid;
+}
+.tag.craftable { color: var(--craftable); border-color: var(--craftable); }
+.tag.locked { color: var(--locked); border-color: var(--locked); }
+.tag.owned { color: var(--warning); border-color: var(--warning); }
+
+.recipe-level {
+  font-family: 'Orbitron', monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* ——— DIVIDER ——— */
+.divider {
+  height: 1px;
+  background: var(--border-main);
+  margin: 2px 14px;
+}
+
+/* ——— STATUS BAR ——— */
+#status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px;
+  background: rgba(0,0,0,0.3);
+  border-top: 1px solid var(--border-main);
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
+}
+#status-bar .highlight { color: var(--craftable); }
+
+/* ——— DETAIL POPUP ——— */
+#detail-popup {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 340px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-accent);
+  padding: 20px;
+  z-index: 10;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+#detail-popup.show { display: block; }
+#detail-popup::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--highlight);
+}
+.detail-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-primary);
+}
+.detail-recipe {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.detail-row .label { color: var(--text-secondary); }
+.detail-row .value { font-weight: 600; }
+.detail-row .value.have { color: var(--craftable); }
+.detail-row .value.need { color: var(--locked); }
+
+.detail-craft-btn {
+  margin-top: 16px;
+  width: 100%;
+  padding: 10px;
+  background: var(--craftable);
+  color: #fff;
+  border: none;
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.detail-craft-btn:hover { background: #3ab85a; }
+.detail-craft-btn:active { background: #22863a; }
+.detail-craft-btn.locked {
+  background: var(--locked-dim);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+.detail-close-btn {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+}
+.detail-close-btn:hover { color: var(--text-secondary); }
+
+@media (max-width: 560px) {
+  #panel { width: 96vw; }
+  #recipes { max-height: 320px; }
+}
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div id="header">
+    <div>
+      <span id="title">◈ FABRICATOR</span>
+      <span id="title-sub">FABRICATION Lv.3</span>
+    </div>
+    <span id="close-btn">[✕ CLOSE]</span>
+  </div>
+
+  <div id="search-row">
+    <input id="search-input" type="text" placeholder="FILTER RECIPES..." />
+  </div>
+
+  <div id="tabs">
+    <div class="tab active" data-tab="all">ALL</div>
+    <div class="tab" data-tab="materials">MATERIALS</div>
+    <div class="tab" data-tab="structures">STRUCTURES</div>
+    <div class="tab" data-tab="consumables">CONSUMABLES</div>
+    <div class="tab" data-tab="tech">TECH</div>
+  </div>
+
+  <div id="recipes">
+    <div class="recipe-group-label">— LV.1 —</div>
+
+    <div class="recipe-card craftable" onclick="showDetail(this)">
+      <div class="recipe-icon">IP</div>
+      <div class="recipe-info">
+        <div class="recipe-name">iron_plate</div>
+        <div class="recipe-inputs"><span class="have">2× iron</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag craftable">CRAFT</span></div>
+    </div>
+
+    <div class="recipe-card craftable" onclick="showDetail(this)">
+      <div class="recipe-icon">CW</div>
+      <div class="recipe-info">
+        <div class="recipe-name">copper_wire</div>
+        <div class="recipe-inputs"><span class="have">2× copper</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag craftable">CRAFT</span></div>
+    </div>
+
+    <div class="recipe-card" onclick="showDetail(this)">
+      <div class="recipe-icon">CT</div>
+      <div class="recipe-info">
+        <div class="recipe-name">circuit</div>
+        <div class="recipe-inputs"><span class="have">copper_wire</span> + <span class="need">iron_plate</span></div>
+      </div>
+      <div class="recipe-status">
+        <span style="color:var(--text-dim);font-size:9px;">1/2 mats</span>
+      </div>
+    </div>
+
+    <div class="recipe-card" onclick="showDetail(this)">
+      <div class="recipe-icon">GL</div>
+      <div class="recipe-info">
+        <div class="recipe-name">glass</div>
+        <div class="recipe-inputs"><span class="need">2× silica</span></div>
+      </div>
+      <div class="recipe-status">
+        <span style="color:var(--text-dim);font-size:9px;">0/2 mats</span>
+      </div>
+    </div>
+
+    <div class="recipe-card craftable" onclick="showDetail(this)">
+      <div class="recipe-icon">WK</div>
+      <div class="recipe-info">
+        <div class="recipe-name">wall_segment</div>
+        <div class="recipe-inputs"><span class="have">2× iron_plate</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag craftable">CRAFT</span></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="recipe-group-label">— LV.2 —</div>
+
+    <div class="recipe-card" onclick="showDetail(this)">
+      <div class="recipe-icon">GN</div>
+      <div class="recipe-info">
+        <div class="recipe-name">generator</div>
+        <div class="recipe-inputs"><span class="need">battery</span> + <span class="need">titanium_plate</span> + <span class="have">circuit</span></div>
+      </div>
+      <div class="recipe-status">
+        <span style="color:var(--text-dim);font-size:9px;">1/3 mats</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="recipe-group-label">— LV.3 —</div>
+
+    <div class="recipe-card locked" onclick="showDetail(this)">
+      <div class="recipe-icon">TP</div>
+      <div class="recipe-info">
+        <div class="recipe-name">titanium_plate</div>
+        <div class="recipe-inputs"><span class="need">2× titanium</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag locked">Lv.3</span></div>
+    </div>
+
+    <div class="recipe-card locked" onclick="showDetail(this)">
+      <div class="recipe-icon">BT</div>
+      <div class="recipe-info">
+        <div class="recipe-name">battery</div>
+        <div class="recipe-inputs"><span class="need">titanium_plate</span> + <span class="need">circuit</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag locked">Lv.3</span></div>
+    </div>
+
+    <div class="recipe-card locked" onclick="showDetail(this)">
+      <div class="recipe-icon">SM</div>
+      <div class="recipe-info">
+        <div class="recipe-name">shield_module</div>
+        <div class="recipe-inputs"><span class="need">titanium_plate</span> + <span class="need">battery</span> + <span class="need">circuit</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag locked">Lv.3</span></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="recipe-group-label">— LV.5 —</div>
+
+    <div class="recipe-card locked" onclick="showDetail(this)">
+      <div class="recipe-icon">UC</div>
+      <div class="recipe-info">
+        <div class="recipe-name">uranium_core</div>
+        <div class="recipe-inputs"><span class="need">2× uranium</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag locked">Lv.5</span></div>
+    </div>
+
+    <div class="recipe-card locked" onclick="showDetail(this)">
+      <div class="recipe-icon">WD</div>
+      <div class="recipe-info">
+        <div class="recipe-name">warp_drive</div>
+        <div class="recipe-inputs"><span class="need">uranium_core</span> + <span class="need">battery</span> + <span class="need">titanium_plate</span></div>
+      </div>
+      <div class="recipe-status"><span class="tag locked">Lv.5</span></div>
+    </div>
+  </div>
+
+  <div id="status-bar">
+    <span>RECIPES: <span class="highlight">5 craftable</span> · 9 locked</span>
+    <span>MATERIALS: <span class="highlight">varied</span></span>
+  </div>
+</div>
+
+<!-- Detail Popup -->
+<div id="detail-popup">
+  <div class="detail-title">iron_plate</div>
+  <div class="detail-recipe">
+    <div class="detail-row"><span class="label">Output</span><span class="value">iron_plate ×1</span></div>
+    <div class="detail-row"><span class="label">Inputs</span><span class="value have">2× iron ✓</span></div>
+    <div class="detail-row"><span class="label">Required Level</span><span class="value">Fabrication Lv.1</span></div>
+    <div class="detail-row"><span class="label">Your Level</span><span class="value have">Fabrication Lv.3 ✓</span></div>
+  </div>
+  <button class="detail-craft-btn">⟳ CRAFT ×1</button>
+  <div class="detail-close-btn" onclick="document.getElementById('detail-popup').classList.remove('show')">[ CLOSE ]</div>
+</div>
+
+<script>
+function showDetail(el) {
+  const popup = document.getElementById('detail-popup');
+  const name = el.querySelector('.recipe-name').textContent;
+  popup.querySelector('.detail-title').textContent = name;
+  const locked = el.classList.contains('locked');
+  const btn = popup.querySelector('.detail-craft-btn');
+  if (locked) {
+    btn.textContent = '⛝ CRAFT LOCKED';
+    btn.classList.add('locked');
+  } else {
+    btn.textContent = '⟳ CRAFT ×1';
+    btn.classList.remove('locked');
+  }
+  popup.classList.add('show');
+}
+
+document.querySelector('.detail-close-btn').addEventListener('click', () => {
+  document.getElementById('detail-popup').classList.remove('show');
+});
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+  });
+});
+
+// Close button
+document.getElementById('close-btn').addEventListener('click', () => {
+  document.body.style.opacity = '0.3';
+  setTimeout(() => { document.body.style.opacity = '1'; }, 300);
+});
+
+// Click outside popup to close
+document.addEventListener('click', (e) => {
+  const popup = document.getElementById('detail-popup');
+  if (popup.classList.contains('show') && !popup.contains(e.target) && !e.target.closest('.recipe-card')) {
+    popup.classList.remove('show');
+  }
+});
+</script>
+</body>
+</html>

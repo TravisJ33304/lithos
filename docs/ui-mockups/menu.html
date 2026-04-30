@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lithos — Main Menu Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-deep: #060a14;
+  --bg-panel: #0d1117;
+  --bg-surface: #151d30;
+  --bg-hover: #1a2640;
+  --border-main: #1e2a45;
+  --border-accent: #2a3a60;
+  --border-active: #58a6ff;
+  --text-primary: #e8eaed;
+  --text-secondary: #7a8aa6;
+  --text-dim: #4a5a70;
+  --highlight: #58a6ff;
+  --danger: #dd3333;
+  --warning: #ffaa33;
+  --safe: #2ea043;
+  --health: #dd3333;
+  --oxygen: #33aaff;
+  --ammo: #f0a000;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg-deep);
+  font-family: 'Rajdhani', sans-serif;
+  color: var(--text-primary);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ——— ANIMATED BACKGROUND ——— */
+#bg {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at 30% 30%, #0a1228 0%, #040812 100%);
+  z-index: 0;
+  overflow: hidden;
+}
+#bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 25% 55%, rgba(255,255,255,0.15), transparent),
+    radial-gradient(1.5px 1.5px at 40% 10%, rgba(255,255,255,0.2), transparent),
+    radial-gradient(1px 1px at 60% 80%, rgba(255,255,255,0.1), transparent),
+    radial-gradient(1px 1px at 75% 30%, rgba(255,255,255,0.2), transparent),
+    radial-gradient(1.5px 1.5px at 90% 60%, rgba(255,255,255,0.15), transparent),
+    radial-gradient(1px 1px at 5% 90%, rgba(255,255,255,0.1), transparent),
+    radial-gradient(1px 1px at 50% 50%, rgba(255,255,255,0.3), transparent);
+  background-size: 100% 100%;
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+@keyframes twinkle {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+/* Hex grid overlay */
+#bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(60deg, transparent, transparent 18px, rgba(26,42,85,0.04) 18px, rgba(26,42,85,0.04) 19px),
+    repeating-linear-gradient(-60deg, transparent, transparent 18px, rgba(26,42,85,0.04) 18px, rgba(26,42,85,0.04) 19px);
+  pointer-events: none;
+}
+
+/* ——— OVERLAY ——— */
+#overlay {
+  position: relative;
+  z-index: 1;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+/* ——— TITLE ——— */
+#title-block {
+  text-align: center;
+  margin-bottom: 8px;
+}
+#title {
+  font-family: 'Orbitron', monospace;
+  font-size: 64px;
+  font-weight: 900;
+  letter-spacing: 12px;
+  color: var(--highlight);
+  text-shadow: 0 0 40px rgba(88,166,255,0.2), 0 4px 8px rgba(0,0,0,0.6);
+}
+#subtitle {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 6px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+/* ——— MAIN PANEL ——— */
+#panel {
+  width: 500px;
+  background: rgba(13,17,23,0.92);
+  border: 1px solid var(--border-accent);
+  position: relative;
+}
+#panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--highlight), transparent 80%);
+}
+
+/* ——— TABS ——— */
+#tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-main);
+}
+.tab {
+  flex: 1;
+  padding: 10px 0;
+  text-align: center;
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.tab:hover { color: var(--text-secondary); background: rgba(255,255,255,0.02); }
+.tab.active { color: var(--highlight); border-bottom-color: var(--highlight); background: rgba(88,166,255,0.06); }
+
+/* ——— CONTENT ——— */
+#content {
+  padding: 16px;
+}
+.panel-content { display: none; }
+.panel-content.active { display: block; }
+
+/* ——— SERVER LIST ——— */
+.server-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-main);
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.server-row:hover { background: var(--bg-hover); }
+.server-row.selected {
+  border-color: var(--highlight);
+  background: rgba(88,166,255,0.06);
+}
+.server-status {
+  width: 8px; height: 8px;
+  border-radius: 0;
+  background: var(--safe);
+  flex-shrink: 0;
+}
+.server-status.dead { background: var(--danger); }
+.server-status.full { background: var(--ammo); }
+
+.server-info { flex: 1; min-width: 0; }
+.server-name {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.server-meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 1px;
+}
+.server-ping {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border: 1px solid var(--border-main);
+}
+.server-players {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-width: 50px;
+  text-align: right;
+}
+
+/* ——— LOGIN ——— */
+#login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.form-label {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.form-input {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border-main);
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-input:focus { border-color: var(--highlight); }
+.form-input::placeholder { color: var(--text-dim); }
+.form-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  background: var(--highlight);
+  color: #fff;
+  border: none;
+  font-family: 'Orbitron', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 8px;
+}
+.btn-primary:hover { background: #4a90e0; }
+.btn-primary:active { background: #3a7bc8; }
+
+.btn-secondary {
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-main);
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.btn-secondary:hover { border-color: var(--text-dim); color: var(--text-primary); }
+
+/* ——— DIRECT CONNECT ——— */
+#direct-connect {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-main);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+#direct-connect input {
+  flex: 1;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-main);
+  padding: 6px 8px;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  outline: none;
+}
+#direct-connect input:focus { border-color: var(--text-dim); }
+
+/* ——— SETTINGS ——— */
+.settings-group {
+  margin-bottom: 14px;
+}
+.settings-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.setting-label { font-size: 11px; color: var(--text-secondary); }
+.setting-value { font-size: 11px; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+
+/* Toggle switch */
+.toggle {
+  width: 32px; height: 16px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid var(--border-main);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s;
+}
+.toggle.on { background: var(--highlight); border-color: var(--highlight); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 1px; left: 1px;
+  width: 12px; height: 12px;
+  background: #fff;
+  transition: left 0.15s;
+}
+.toggle.on::after { left: 17px; }
+
+/* Slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100px;
+  height: 4px;
+  background: var(--border-main);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  background: var(--highlight);
+  cursor: pointer;
+}
+
+/* ——— VERSION ——— */
+#version {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  z-index: 2;
+}
+#footer-links {
+  position: fixed;
+  bottom: 8px;
+  left: 12px;
+  display: flex;
+  gap: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  z-index: 2;
+}
+#footer-links span { cursor: pointer; transition: color 0.12s; }
+#footer-links span:hover { color: var(--text-secondary); }
+
+@media (max-width: 540px) {
+  #panel { width: 96vw; }
+  #title { font-size: 36px; letter-spacing: 6px; }
+  #subtitle { font-size: 10px; letter-spacing: 4px; }
+}
+
+/* ------- LOADING OVERLAY ------- */
+#loading {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(6,10,20,0.92);
+  z-index: 100;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+#loading.show { display: flex; }
+.loading-spinner {
+  width: 48px; height: 48px;
+  border: 2px solid var(--border-main);
+  border-top-color: var(--highlight);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+}
+.loading-dots::after {
+  content: '';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+@keyframes dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+</style>
+</head>
+<body>
+
+<div id="bg"></div>
+
+<div id="overlay">
+  <div id="title-block">
+    <div id="title">LITHOS</div>
+    <div id="subtitle">MULTIPLAYER SURVIVAL CRAFTING</div>
+  </div>
+
+  <div id="panel">
+    <div id="tabs">
+      <div class="tab active" data-tab="play">PLAY</div>
+      <div class="tab" data-tab="settings">SETTINGS</div>
+    </div>
+
+    <div id="content">
+      <!-- PLAY TAB -->
+      <div class="panel-content active" id="panel-play">
+        <div id="server-list">
+          <div class="server-row selected">
+            <div class="server-status"></div>
+            <div class="server-info">
+              <div class="server-name">LITHOS-US-EAST-01</div>
+              <div class="server-meta">us-east · Phase 7 · v0.7.0</div>
+            </div>
+            <div class="server-ping">12ms</div>
+            <div class="server-players">24 / 100</div>
+          </div>
+          <div class="server-row">
+            <div class="server-status"></div>
+            <div class="server-info">
+              <div class="server-name">LITHOS-EU-WEST-02</div>
+              <div class="server-meta">eu-west · Phase 7 · v0.7.0</div>
+            </div>
+            <div class="server-ping">64ms</div>
+            <div class="server-players">47 / 100</div>
+          </div>
+          <div class="server-row">
+            <div class="server-status"></div>
+            <div class="server-info">
+              <div class="server-name">LITHOS-ASIA-SG-01</div>
+              <div class="server-meta">asia-sg · Phase 7 · v0.7.0</div>
+            </div>
+            <div class="server-ping">132ms</div>
+            <div class="server-players">19 / 100</div>
+          </div>
+        </div>
+
+        <div id="login-form" style="margin-top:12px;">
+          <div class="form-row">
+            <span class="form-label">CALLSIGN</span>
+            <input class="form-input" type="text" placeholder="Enter your callsign..." value="pilot_alpha" />
+            <span class="form-hint">Dev auth: use callsign#faction (e.g. pilot#1)</span>
+          </div>
+          <button class="btn-primary">⟳ LAUNCH</button>
+        </div>
+
+        <div id="direct-connect">
+          <span style="font-size:10px;color:var(--text-dim);white-space:nowrap;">WS:</span>
+          <input type="text" value="ws://localhost:9001" />
+          <button class="btn-secondary">CONNECT</button>
+        </div>
+      </div>
+
+      <!-- SETTINGS TAB -->
+      <div class="panel-content" id="panel-settings">
+        <div class="settings-group">
+          <div class="settings-title">AUDIO</div>
+          <div class="setting-row">
+            <span class="setting-label">Master Volume</span>
+            <input type="range" min="0" max="100" value="80" />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">SFX</span>
+            <span class="setting-value">80%</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Music</span>
+            <span class="setting-value">40%</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-title">GRAPHICS</div>
+          <div class="setting-row">
+            <span class="setting-label">Fullscreen</span>
+            <div class="toggle on"></div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Show FPS</span>
+            <div class="toggle on"></div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Show Tick</span>
+            <div class="toggle"></div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Minimap Zoom</span>
+            <span class="setting-value">0.05x</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-title">CONTROLS</div>
+          <div class="setting-row">
+            <span class="setting-label">Invert Mouse Y</span>
+            <div class="toggle"></div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Sensitivity</span>
+            <input type="range" min="1" max="10" value="5" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="version">v0.7.0 · <span id="build-hash">a3f2c1d</span></div>
+<div id="footer-links">
+  <span>CHANGELOG</span>
+  <span>CREDITS</span>
+  <span>LICENSE</span>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loading">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">CONNECTING TO SERVER</div>
+  <div class="loading-text" style="font-size:9px;color:var(--text-dim);">Establishing secure channel<span class="loading-dots"></span></div>
+</div>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel-content').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+// Server selection
+document.querySelectorAll('.server-row').forEach(row => {
+  row.addEventListener('click', () => {
+    document.querySelectorAll('.server-row').forEach(x => x.classList.remove('selected'));
+    row.classList.add('selected');
+  });
+});
+
+// Toggle switches
+document.querySelectorAll('.toggle').forEach(t => {
+  t.addEventListener('click', () => t.classList.toggle('on'));
+});
+
+// Launch button shows loading
+document.querySelector('.btn-primary').addEventListener('click', () => {
+  document.getElementById('loading').classList.add('show');
+  setTimeout(() => {
+    document.getElementById('loading').classList.remove('show');
+  }, 3000);
+});
+</script>
+</body>
+</html>

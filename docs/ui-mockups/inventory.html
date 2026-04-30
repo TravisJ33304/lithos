@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lithos — Inventory Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-deep: #0a0e1a;
+  --bg-panel: #101624;
+  --bg-surface: #151d30;
+  --bg-hover: #1a2640;
+  --border-main: #1e2a45;
+  --border-accent: #2a3a60;
+  --text-primary: #e8eaed;
+  --text-secondary: #7a8aa6;
+  --text-dim: #4a5a70;
+  --highlight: #58a6ff;
+  --rare: #a335ee;
+  --uncommon: #1eff00;
+  --common: #ffffff;
+  --danger: #dd3333;
+  --ammo: #f0a000;
+  --craftable: #2ea043;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg-deep);
+  font-family: 'Rajdhani', sans-serif;
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  user-select: none;
+}
+
+/* ——— LAYOUT ——— */
+#layout {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ——— INVENTORY PANEL ——— */
+#inventory {
+  width: 380px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-accent);
+  position: relative;
+  overflow: hidden;
+}
+#inventory::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--highlight), transparent 80%);
+}
+
+.inv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border-main);
+}
+.inv-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--highlight);
+}
+.inv-capacity {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* ——— INVENTORY GRID ——— */
+#inv-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  padding: 8px;
+}
+.inv-slot {
+  aspect-ratio: 1;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid var(--border-main);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s, border-color 0.12s;
+  font-family: 'JetBrains Mono', monospace;
+}
+.inv-slot:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+.inv-slot.has-item {
+  border-color: rgba(255,255,255,0.15);
+}
+.inv-slot .item-icon {
+  font-size: 12px;
+  font-weight: 700;
+}
+.inv-slot .item-qty {
+  font-size: 8px;
+  color: var(--text-secondary);
+  position: absolute;
+  bottom: 2px;
+  right: 3px;
+}
+.inv-slot .item-label {
+  font-size: 6px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 1px;
+}
+.inv-slot .blank {
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.3;
+}
+
+/* Rarity borders */
+.inv-slot.rare { border-color: var(--rare); }
+.inv-slot.uncommon { border-color: var(--uncommon); }
+
+/* Quick-equip bar at top of grid */
+#equip-bar {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px 0;
+  margin-bottom: -4px;
+}
+.equip-slot {
+  width: 48px;
+  height: 48px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid var(--border-accent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  position: relative;
+}
+.equip-slot .slot-label {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  font-size: 6px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.equip-slot.filled { border-color: rgba(88,166,255,0.3); color: var(--text-primary); }
+
+/* ——— TOOLTIP ——— */
+#tooltip {
+  display: none;
+  position: fixed;
+  width: 200px;
+  background: #0d1117;
+  border: 1px solid var(--border-accent);
+  padding: 10px 12px;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+#tooltip.show { display: block; }
+#tooltip::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+#tooltip.rare::before { background: var(--rare); }
+#tooltip.uncommon::before { background: var(--uncommon); }
+#tooltip.common::before { background: var(--highlight); }
+
+.tt-name {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.tt-name.rare { color: var(--rare); }
+.tt-name.uncommon { color: var(--uncommon); }
+
+.tt-type {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.tt-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+.tt-stats {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tt-stat {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.tt-stat .val { color: var(--text-primary); font-weight: 600; }
+.tt-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+}
+.tt-action {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  padding: 3px 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-main);
+  color: var(--text-secondary);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.12s, color 0.12s;
+}
+.tt-action:hover { background: var(--bg-hover); color: var(--text-primary); }
+.tt-action.danger:hover { border-color: var(--danger); color: var(--danger); }
+.tt-action.primary:hover { border-color: var(--highlight); color: var(--highlight); }
+
+/* ——— EQUIPMENT PANEL (RIGHT SIDE) ——— */
+#equipment {
+  width: 160px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-accent);
+  position: relative;
+  overflow: hidden;
+}
+#equipment::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--highlight), transparent 80%);
+}
+
+.equip-header {
+  padding: 12px 16px 8px;
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--highlight);
+  border-bottom: 1px solid var(--border-main);
+}
+
+.equip-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+.equip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border-main);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.equip-row:hover { background: var(--bg-hover); }
+.equip-row.filled { border-color: rgba(88,166,255,0.2); }
+.equip-row .e-icon {
+  width: 24px; height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border-main);
+}
+.equip-row .e-name {
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+.equip-row .e-label {
+  font-size: 7px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: 40px;
+  text-align: right;
+}
+
+/* ——— CONTEXT MENU ——— */
+#context-menu {
+  display: none;
+  position: fixed;
+  background: #0d1117;
+  border: 1px solid var(--border-accent);
+  z-index: 999;
+  min-width: 120px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+#context-menu.show { display: block; }
+.cm-item {
+  padding: 6px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.cm-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.cm-item.danger:hover { color: var(--danger); }
+.cm-divider { height: 1px; background: var(--border-main); margin: 2px 0; }
+
+@media (max-width: 600px) {
+  #inventory { width: 100%; }
+  #inv-grid { grid-template-columns: repeat(4, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div id="layout">
+  <!-- Inventory Panel -->
+  <div id="inventory">
+    <div class="inv-header">
+      <span class="inv-title">◈ CARGO HOLD</span>
+      <span class="inv-capacity">14 / 30 SLOTS</span>
+    </div>
+
+    <div id="equip-bar">
+      <div class="equip-slot filled" title="Mining Laser">
+        <span>ML</span>
+        <span class="slot-label">TOOL</span>
+      </div>
+      <div class="equip-slot filled" title="Plasma Pistol">
+        <span>PP</span>
+        <span class="slot-label">WPN</span>
+      </div>
+      <div class="equip-slot" title="Empty">
+        <span style="font-size:14px;opacity:0.3;">⊘</span>
+        <span class="slot-label">WPN</span>
+      </div>
+    </div>
+
+    <div id="inv-grid">
+      <div class="inv-slot has-item" data-name="Mining Laser" data-type="Tool" data-desc="Standard issue mining laser. Effective against mineral deposits." data-rarity="common" data-stats="DMG: 8 | Range: 200">
+        <span class="item-icon">ML</span>
+        <span class="item-qty">1</span>
+        <span class="item-label">LASER</span>
+      </div>
+      <div class="inv-slot has-item" data-name="Plasma Pistol" data-type="Weapon" data-desc="Sidearm plasma caster. Reliable at close to medium range." data-rarity="uncommon" data-stats="DMG: 22 | ROF: 2/s | Ammo: 8/50">
+        <span class="item-icon">PP</span>
+        <span class="item-qty">1</span>
+        <span class="item-label">PISTOL</span>
+      </div>
+      <div class="inv-slot has-item" data-name="Iron" data-type="Material" data-desc="Common ferrous metal. Used in basic crafting and ammunition." data-rarity="common" data-stats="">
+        <span class="item-icon">FE</span>
+        <span class="item-qty">12</span>
+        <span class="item-label">IRON</span>
+      </div>
+      <div class="inv-slot has-item" data-name="Copper" data-type="Material" data-desc="Conductive metal. Used for wiring and electronic components." data-rarity="common" data-stats="">
+        <span class="item-icon">CU</span>
+        <span class="item-qty">8</span>
+        <span class="item-label">COPPER</span>
+      </div>
+      <div class="inv-slot has-item" data-name="Silica" data-type="Material" data-desc="Silicon dioxide crystals. Refined into glass for electronics." data-rarity="common" data-stats="">
+        <span class="item-icon">SI</span>
+        <span class="item-qty">4</span>
+        <span class="item-label">SILICA</span>
+      </div>
+      <div class="inv-slot has-item" data-name="iron_plate" data-type="Crafted" data-desc="A flat piece of forged iron. Used in structures and mechanisms." data-rarity="common" data-stats="">
+        <span class="item-icon">IP</span>
+        <span class="item-qty">6</span>
+        <span class="item-label">PLATE</span>
+      </div>
+      <div class="inv-slot has-item" data-name="copper_wire" data-type="Crafted" data-desc="Insulated copper conductors. Essential for circuitry." data-rarity="common" data-stats="">
+        <span class="item-icon">CW</span>
+        <span class="item-qty">3</span>
+        <span class="item-label">WIRE</span>
+      </div>
+      <div class="inv-slot has-item" data-name="circuit" data-type="Crafted" data-desc="Printed circuit board. Brains of automated systems." data-rarity="uncommon" data-stats="">
+        <span class="item-icon">CT</span>
+        <span class="item-qty">1</span>
+        <span class="item-label">CIRCUIT</span>
+      </div>
+      <div class="inv-slot has-item" data-name="Medkit" data-type="Consumable" data-desc="Emergency medical kit. Restores 40 HP over 5 seconds." data-rarity="uncommon" data-stats="Heal: 40 | Duration: 5s">
+        <span class="item-icon">+</span>
+        <span class="item-qty">2</span>
+        <span class="item-label">MEDKIT</span>
+      </div>
+      <div class="inv-slot has-item" data-name="bio_fuel" data-type="Material" data-desc="Refined biomass. Used to power generators and thrusters." data-rarity="common" data-stats="">
+        <span class="item-icon">BF</span>
+        <span class="item-qty">3</span>
+        <span class="item-label">FUEL</span>
+      </div>
+      <div class="inv-slot has-item" data-name="wall_segment" data-type="Structure" data-desc="Reinforced composite wall panel. Part of base defense systems." data-rarity="common" data-stats="HP: 500 | Armor: 20">
+        <span class="item-icon">▣</span>
+        <span class="item-qty">4</span>
+        <span class="item-label">WALL</span>
+      </div>
+      <div class="inv-slot has-item" data-name="Scrap" data-type="Material" data-desc="Miscellaneous salvaged metal. Good for basic repairs." data-rarity="common" data-stats="">
+        <span class="item-icon">SR</span>
+        <span class="item-qty">7</span>
+        <span class="item-label">SCRAP</span>
+      </div>
+      <div class="inv-slot" data-name="">
+        <span class="blank">·</span>
+      </div>
+      <div class="inv-slot" data-name="">
+        <span class="blank">·</span>
+      </div>
+      <div class="inv-slot" data-name="">
+        <span class="blank">·</span>
+      </div>
+      <div class="inv-slot" data-name="">
+        <span class="blank">·</span>
+      </div>
+      <div class="inv-slot" data-name="">
+        <span class="blank">·</span>
+      </div>
+      <div class="inv-slot" data-name="">
+        <span class="blank">·</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Equipment Panel -->
+  <div id="equipment">
+    <div class="equip-header">◈ EQUIP</div>
+    <div class="equip-slots">
+      <div class="equip-row filled">
+        <div class="e-icon">ML</div>
+        <div class="e-name">Mining Laser</div>
+        <div class="e-label">TOOL</div>
+      </div>
+      <div class="equip-row filled">
+        <div class="e-icon">PP</div>
+        <div class="e-name">Plasma Pistol</div>
+        <div class="e-label">WPN</div>
+      </div>
+      <div class="equip-row">
+        <div class="e-icon" style="color:var(--text-dim);">⊘</div>
+        <div class="e-name" style="color:var(--text-dim);">Empty</div>
+        <div class="e-label">WPN</div>
+      </div>
+      <div class="equip-row">
+        <div class="e-icon" style="color:var(--text-dim);">⊘</div>
+        <div class="e-name" style="color:var(--text-dim);">Empty</div>
+        <div class="e-label">ARMOR</div>
+      </div>
+      <div class="equip-row">
+        <div class="e-icon" style="color:var(--text-dim);">⊘</div>
+        <div class="e-name" style="color:var(--text-dim);">Empty</div>
+        <div class="e-label">SYS</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip">
+  <div class="tt-name" id="tt-name">Mining Laser</div>
+  <div class="tt-type" id="tt-type">Tool</div>
+  <div class="tt-desc" id="tt-desc">Standard issue mining laser. Effective against mineral deposits.</div>
+  <div class="tt-stats" id="tt-stats">
+    <div class="tt-stat"><span class="val">DMG: 8</span> · Range: 200</div>
+  </div>
+  <div class="tt-actions">
+    <span class="tt-action primary">⟳ EQUIP</span>
+    <span class="tt-action">◈ USE</span>
+    <span class="tt-action danger">✕ DROP</span>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div id="context-menu">
+  <div class="cm-item primary">⟳ Equip to Hotbar</div>
+  <div class="cm-item">◈ Use</div>
+  <div class="cm-item">⋮ Move to Vault</div>
+  <div class="cm-divider"></div>
+  <div class="cm-item danger">✕ Drop</div>
+</div>
+
+<script>
+// Tooltip on hover
+const slots = document.querySelectorAll('.inv-slot.has-item');
+const tooltip = document.getElementById('tooltip');
+
+slots.forEach(slot => {
+  slot.addEventListener('mouseenter', (e) => {
+    const name = slot.dataset.name;
+    const type = slot.dataset.type;
+    const desc = slot.dataset.desc;
+    const rarity = slot.dataset.rarity;
+    const stats = slot.dataset.stats;
+
+    document.getElementById('tt-name').textContent = name;
+    document.getElementById('tt-name').className = 'tt-name ' + rarity;
+    document.getElementById('tt-type').textContent = type;
+    document.getElementById('tt-desc').textContent = desc;
+
+    const statsEl = document.getElementById('tt-stats');
+    if (stats) {
+      statsEl.innerHTML = '<div class="tt-stat"><span class="val">' + stats.replace(/\|/g, '</span> · ');
+      statsEl.style.display = 'block';
+    } else {
+      statsEl.style.display = 'none';
+    }
+
+    tooltip.className = 'show ' + rarity;
+
+    const rect = slot.getBoundingClientRect();
+    let x = rect.right + 8;
+    let y = rect.top;
+    if (x + 210 > window.innerWidth) {
+      x = rect.left - 210;
+    }
+    if (y + 180 > window.innerHeight) {
+      y = window.innerHeight - 190;
+    }
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+  });
+
+  slot.addEventListener('mouseleave', () => {
+    tooltip.classList.remove('show');
+  });
+});
+
+// Right-click context menu
+slots.forEach(slot => {
+  slot.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const menu = document.getElementById('context-menu');
+    menu.classList.add('show');
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+  });
+});
+document.addEventListener('click', () => {
+  document.getElementById('context-menu').classList.remove('show');
+});
+</script>
+</body>
+</html>
