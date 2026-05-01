@@ -8,6 +8,7 @@ import * as Phaser from "phaser";
 import type { NetworkClient } from "../net/NetworkClient";
 import type { EntitySnapshot, ServerMessage } from "../types/protocol";
 import { gameUi } from "../ui/GameUiManager";
+import { resolveSprite } from "../config/SpriteRegistry";
 
 interface BaseData {
 	net: NetworkClient;
@@ -15,7 +16,7 @@ interface BaseData {
 }
 
 interface RenderedEntity {
-	sprite: Phaser.GameObjects.Shape;
+	sprite: Phaser.GameObjects.Sprite;
 	label: Phaser.GameObjects.Text;
 	targetX: number;
 	targetY: number;
@@ -176,41 +177,38 @@ export class AsteroidBaseScene extends Phaser.Scene {
 		const isMe = entity.id === this.myEntityId;
 		const type = entity.entity_type;
 
-		let color = 0xffffff;
-		let size = 14;
-		let labelText = "";
+		const spriteDef = resolveSprite(type);
+		let sprite: Phaser.GameObjects.Sprite;
 
-		if (type === "Player") {
-			color = isMe ? 0x58a6ff : 0x7c3aed;
-			labelText = isMe ? "YOU" : `P${entity.id}`;
-		} else if (type === "Unknown") {
-			// Base structure
-			color = 0x888888;
-			size = 20;
-		}
-
-		let sprite: Phaser.GameObjects.Shape;
 		if (type === "Unknown") {
-			sprite = this.add.rectangle(
+			// Structures use the structure texture
+			sprite = this.add.sprite(
 				entity.position.x,
 				entity.position.y,
-				40,
-				40,
-				color,
+				spriteDef.texture,
 			);
-			sprite.setStrokeStyle(1, 0x555555);
+			sprite.setScale(spriteDef.scale ?? 1.0);
 		} else {
-			sprite = this.add.circle(
+			// Standard entity sprite
+			sprite = this.add.sprite(
 				entity.position.x,
 				entity.position.y,
-				size,
-				color,
+				spriteDef.texture,
 			);
+			sprite.setScale(spriteDef.scale ?? 1.0);
 		}
+
+		// Apply tint for differentiation
+		if (type === "Player" && isMe) {
+			sprite.setTint(0x58a6ff); // Blue for self
+		} else if (type === "Player") {
+			sprite.setTint(0x7c3aed); // Purple for others
+		}
+
 		sprite.setDepth(10);
 
 		const label = this.add
-			.text(entity.position.x, entity.position.y - size - 10, labelText, {
+			.text(entity.position.x, entity.position.y - 30, isMe ? "YOU" : `P${entity.id}`, {
 				fontSize: "10px",
 				color: isMe ? "#58a6ff" : "#aaaaaa",
 				fontFamily: "monospace",
