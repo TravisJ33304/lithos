@@ -44,7 +44,7 @@ impl Default for ApiConfig {
             bind_addr: std::env::var("API_BIND_ADDR")
                 .unwrap_or_else(|_| "0.0.0.0:3000".to_string()),
             database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-                "postgresql://postgres:postgres@localhost:5432/lithos".to_string()
+                "postgresql://postgres:postgres@127.0.0.1:54322/postgres".to_string()
             }),
             supabase_jwks_url: std::env::var("SUPABASE_JWKS_URL").ok(),
             supabase_jwt_issuer: std::env::var("SUPABASE_JWT_ISSUER").ok(),
@@ -221,6 +221,7 @@ async fn decode_supabase_claims(token: &str, config: &ApiConfig) -> Result<RawCl
         .context("SUPABASE_JWKS_URL is not configured")?;
 
     let header = decode_header(token).context("failed to decode JWT header")?;
+    let algorithm = header.alg;
     let kid = header.kid.clone().context("JWT missing kid header")?;
 
     let jwks = reqwest::Client::new()
@@ -240,11 +241,11 @@ async fn decode_supabase_claims(token: &str, config: &ApiConfig) -> Result<RawCl
         .find(|k| k.kid.as_deref() == Some(kid.as_str()))
         .context("matching key id not found in JWKS")?;
 
-    let decoding_key = if key.kty == "RSA" {
+    let decoding_key = if key.kty == "RSA" && algorithm == Algorithm::RS256 {
         let n = key.n.context("JWKS RSA key missing modulus")?;
         let e = key.e.context("JWKS RSA key missing exponent")?;
         DecodingKey::from_rsa_components(&n, &e).context("invalid JWKS RSA key")?
-    } else if key.kty == "EC" {
+    } else if key.kty == "EC" && algorithm == Algorithm::ES256 {
         let x5c = key.x5c.context("JWKS EC key missing x5c")?;
         let cert = x5c.first().context("JWKS EC x5c chain empty")?;
         let cert_der = base64::engine::general_purpose::STANDARD
@@ -252,10 +253,14 @@ async fn decode_supabase_claims(token: &str, config: &ApiConfig) -> Result<RawCl
             .context("invalid x5c certificate")?;
         DecodingKey::from_ec_der(&cert_der)
     } else {
-        anyhow::bail!("unsupported JWK key type: {}", key.kty)
+        anyhow::bail!(
+            "unsupported JWK key type/algorithm combination: {}/ {:?}",
+            key.kty,
+            algorithm
+        )
     };
 
-    let mut validation = Validation::new(Algorithm::RS256);
+    let mut validation = Validation::new(algorithm);
     validation.set_required_spec_claims(&["sub", "exp"]);
     if let Some(issuer) = config.supabase_jwt_issuer.as_deref() {
         validation.set_issuer(&[issuer]);

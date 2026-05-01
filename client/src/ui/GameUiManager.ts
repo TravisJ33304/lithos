@@ -9,7 +9,7 @@ import type {
 } from "../types/protocol";
 
 type JoinHandler = (payload: { username: string; endpoint: string }) => void;
-type LoginHandler = (username: string) => void;
+type LoginHandler = (payload: { username: string; password: string }) => void;
 type CraftHandler = (recipe: string) => void;
 type TradeHandler = (item: string, quantity: number) => void;
 
@@ -492,7 +492,8 @@ class GameUiManager {
 			<div id="ui-login">
 				<div class="ui-menu-panel">
 					<div class="ui-panel-title">LITHOS LAUNCH</div>
-					<div class="ui-row"><label>CALLSIGN</label><input id="username" placeholder="callsign"/></div>
+					<div class="ui-row"><label>CALLSIGN / EMAIL</label><input id="username" placeholder="callsign or email"/></div>
+					<div class="ui-row"><label>PASSWORD</label><input id="ui-password" type="password" placeholder="Supabase password (optional for dev)"/></div>
 					<div class="ui-row ui-muted">Endpoint <span id="ui-login-endpoint">ws://localhost:9001</span></div>
 					<button id="ui-login-btn">LAUNCH</button>
 					<div id="ui-login-status" data-tone="idle">Ready to launch</div>
@@ -655,7 +656,10 @@ class GameUiManager {
 
 	private submitLogin(): void {
 		const input = this.root.querySelector("#username") as HTMLInputElement;
-		this.onLogin?.(input.value.trim() || "guest");
+		const password = (
+			this.root.querySelector("#ui-password") as HTMLInputElement
+		).value;
+		this.onLogin?.({ username: input.value.trim() || "guest", password });
 	}
 
 	private vitalTemplate(kind: string, label: string, value: string): string {

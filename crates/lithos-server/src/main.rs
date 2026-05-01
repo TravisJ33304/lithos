@@ -52,12 +52,22 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            listen_addr: "0.0.0.0:9001".to_string(),
-            tick_rate: 20,
-            max_players: 100,
-            world_seed: 12345,
+            listen_addr: std::env::var("SERVER_LISTEN_ADDR")
+                .unwrap_or_else(|_| "0.0.0.0:9001".to_string()),
+            tick_rate: std::env::var("SERVER_TICK_RATE")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(20),
+            max_players: std::env::var("SERVER_MAX_PLAYERS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(100),
+            world_seed: std::env::var("SERVER_WORLD_SEED")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(12345),
             db_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-                "postgresql://postgres:postgres@localhost:5432/lithos".to_string()
+                "postgresql://postgres:postgres@127.0.0.1:54322/postgres".to_string()
             }),
             central_api_url: std::env::var("CENTRAL_API_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:3000".to_string()),

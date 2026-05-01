@@ -226,6 +226,16 @@ function normalizeInventorySnapshot(v: unknown): InventorySnapshot {
 }
 
 function normalizeItemDefinition(v: unknown): ItemDefinition {
+	if (Array.isArray(v) && v.length >= 6) {
+		return {
+			item: asString(v[0]),
+			display_name: asString(v[1]),
+			description: asString(v[2]),
+			rarity: normalizeItemRarity(v[3]),
+			category: asString(v[4]) as ItemDefinition["category"],
+			stack_limit: asNumber(v[5]),
+		};
+	}
 	if (isRecord(v)) {
 		return {
 			item: asString(v.item),
@@ -240,6 +250,15 @@ function normalizeItemDefinition(v: unknown): ItemDefinition {
 }
 
 function normalizeRecipeDefinition(v: unknown): RecipeDefinition {
+	if (Array.isArray(v) && v.length >= 5) {
+		return {
+			name: asString(v[0]),
+			output: asString(v[1]),
+			required_branch: normalizeSkillBranch(v[2]),
+			required_level: asNumber(v[3]),
+			inputs: Array.isArray(v[4]) ? v[4].map(asString) : [],
+		};
+	}
 	if (isRecord(v)) {
 		return {
 			name: asString(v.name),
@@ -268,6 +287,16 @@ function normalizeInteractableSnapshot(v: unknown): InteractableSnapshot {
 }
 
 function normalizePowerNetworkSnapshot(v: unknown): PowerNetworkSnapshot {
+	if (Array.isArray(v) && v.length >= 6) {
+		return {
+			network_id: asNumber(v[0]),
+			zone: normalizeZoneId(v[1]),
+			generation_kw: asNumber(v[2]),
+			load_kw: asNumber(v[3]),
+			consumers_powered: asNumber(v[4]),
+			consumers_total: asNumber(v[5]),
+		};
+	}
 	if (isRecord(v)) {
 		return {
 			network_id: asNumber(v.network_id),
@@ -570,6 +599,18 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 			};
 		}
 		case "CraftingCatalog": {
+			if (Array.isArray(payload) && payload.length >= 2) {
+				return {
+					CraftingCatalog: {
+						items: Array.isArray(payload[0])
+							? payload[0].map(normalizeItemDefinition)
+							: [],
+						recipes: Array.isArray(payload[1])
+							? payload[1].map(normalizeRecipeDefinition)
+							: [],
+					},
+				};
+			}
 			if (isRecord(payload)) {
 				return {
 					CraftingCatalog: {
@@ -745,6 +786,16 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 			};
 		}
 		case "PowerState": {
+			if (Array.isArray(payload) && payload.length >= 2) {
+				return {
+					PowerState: {
+						zone: normalizeZoneId(payload[0]),
+						networks: Array.isArray(payload[1])
+							? payload[1].map(normalizePowerNetworkSnapshot)
+							: [],
+					},
+				};
+			}
 			if (isRecord(payload)) {
 				return {
 					PowerState: {

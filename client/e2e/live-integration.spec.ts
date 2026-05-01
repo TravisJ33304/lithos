@@ -2,17 +2,19 @@ import { expect, test } from "@playwright/test";
 import { expectScene, isPortOpen } from "./helpers";
 
 let liveServerAvailable = false;
+const liveWsUrl = process.env.LITHOS_E2E_WS_URL ?? "ws://localhost:9001";
+const liveServerPort = Number(process.env.LITHOS_E2E_SERVER_PORT ?? "9001");
 
 test.beforeAll(async () => {
 	liveServerAvailable =
 		process.env.LITHOS_RUN_LIVE_E2E === "1" &&
-		(await isPortOpen("127.0.0.1", 9001));
+		(await isPortOpen("127.0.0.1", liveServerPort));
 });
 
 test("joins local server and exercises core in-game flow", async ({ page }) => {
 	test.skip(
 		!liveServerAvailable,
-		"set LITHOS_RUN_LIVE_E2E=1 with lithos-server running on ws://localhost:9001",
+		"set LITHOS_RUN_LIVE_E2E=1 with lithos-server running at LITHOS_E2E_WS_URL",
 	);
 
 	const consoleErrors: string[] = [];
@@ -31,7 +33,7 @@ test("joins local server and exercises core in-game flow", async ({ page }) => {
 					server_id: "local-shard",
 					name: "Local Dev Shard",
 					region: "local",
-					websocket_url: "ws://localhost:9001",
+					websocket_url: liveWsUrl,
 					population: 1,
 					capacity: 100,
 					healthy: true,
@@ -41,6 +43,7 @@ test("joins local server and exercises core in-game flow", async ({ page }) => {
 	});
 
 	await page.goto("/");
+	await page.click(".ui-server-row");
 	await page.fill("#ui-username", "playwright#1");
 	await page.click("#ui-join-btn");
 
@@ -61,11 +64,18 @@ test("joins local server and exercises core in-game flow", async ({ page }) => {
 	await expect(page.locator("#ui-chat-log")).toContainText(
 		"playwright e2e chat",
 	);
+	await page.locator("#ui-chat-input").evaluate((el) => {
+		(el as HTMLInputElement).blur();
+	});
 
-	await page.keyboard.press("Space");
+	await page.keyboard.down("Space");
+	await page.waitForTimeout(100);
+	await page.keyboard.up("Space");
 	await expectScene(page, "AsteroidBaseScene");
 
-	await page.keyboard.press("Space");
+	await page.keyboard.down("Space");
+	await page.waitForTimeout(100);
+	await page.keyboard.up("Space");
 	await expectScene(page, "OverworldScene");
 
 	expect(consoleErrors).toEqual([]);

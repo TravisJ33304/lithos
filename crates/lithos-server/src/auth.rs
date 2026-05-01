@@ -46,6 +46,7 @@ pub async fn validate_supabase_jwt(
     expected_audience: Option<&str>,
 ) -> Result<Claims> {
     let header = decode_header(token).context("failed to decode JWT header")?;
+    let algorithm = header.alg;
     let kid = header.kid.clone().context("JWT missing kid header")?;
 
     let jwks = reqwest::Client::new()
@@ -65,11 +66,11 @@ pub async fn validate_supabase_jwt(
         .find(|k| k.kid.as_deref() == Some(kid.as_str()))
         .context("matching JWKS key id not found")?;
 
-    let decoding_key = if key.kty == "RSA" {
+    let decoding_key = if key.kty == "RSA" && algorithm == Algorithm::RS256 {
         let n = key.n.context("JWKS RSA key missing modulus n")?;
         let e = key.e.context("JWKS RSA key missing exponent e")?;
         DecodingKey::from_rsa_components(&n, &e).context("invalid RSA components in JWKS")?
-    } else if key.kty == "EC" {
+    } else if key.kty == "EC" && algorithm == Algorithm::ES256 {
         let x5c = key.x5c.context("JWKS EC key missing x5c cert chain")?;
         let cert_b64 = x5c.first().context("JWKS x5c cert chain empty")?;
         let cert_der = base64::engine::general_purpose::STANDARD
@@ -77,10 +78,14 @@ pub async fn validate_supabase_jwt(
             .context("invalid base64 x5c certificate")?;
         DecodingKey::from_ec_der(&cert_der)
     } else {
-        anyhow::bail!("unsupported JWKS key type: {}", key.kty)
+        anyhow::bail!(
+            "unsupported JWKS key type/algorithm combination: {}/ {:?}",
+            key.kty,
+            algorithm
+        )
     };
 
-    let mut validation = Validation::new(Algorithm::RS256);
+    let mut validation = Validation::new(algorithm);
     validation.set_required_spec_claims(&["exp", "sub"]);
     if let Some(issuer) = expected_issuer {
         validation.set_issuer(&[issuer]);

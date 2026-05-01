@@ -10,6 +10,12 @@ services:
       - "9001:9001"
     environment:
       RUST_LOG: lithos=debug
+      DATABASE_URL: ${DATABASE_URL}
+      CENTRAL_API_URL: http://api:3000
+      CENTRAL_API_KEY: ${CENTRAL_API_KEY}
+      SUPABASE_JWKS_URL: ${SUPABASE_JWKS_URL}
+      SUPABASE_JWT_ISSUER: ${SUPABASE_JWT_ISSUER}
+      SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE}
     depends_on:
       - api
 
@@ -21,8 +27,11 @@ services:
       - "3000:3000"
     environment:
       RUST_LOG: lithos=debug
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+      CENTRAL_API_KEY: ${CENTRAL_API_KEY}
+      SUPABASE_JWKS_URL: ${SUPABASE_JWKS_URL}
+      SUPABASE_JWT_ISSUER: ${SUPABASE_JWT_ISSUER}
+      SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE}
 
   client:
     build:

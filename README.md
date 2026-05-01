@@ -26,9 +26,14 @@ See [docs/architecture.md](docs/architecture.md) for detailed diagrams.
 ### Server
 
 ```bash
+supabase start
 cargo build --workspace
 cargo run --bin lithos-server
 ```
+
+The default server/API database URL points at the Supabase CLI local Postgres
+port (`127.0.0.1:54322`). Run `supabase db reset` after schema changes to apply
+the migrations in `supabase/migrations`.
 
 ### Client
 
@@ -37,6 +42,10 @@ cd client
 npm install
 npm run dev
 ```
+
+For Supabase-backed auth, copy `client/.env.example` to `client/.env` and set
+`VITE_SUPABASE_ANON_KEY` from `supabase status`. If those values are left as
+placeholders, the client keeps the dev callsign login flow.
 
 ### Docker (full stack)
 

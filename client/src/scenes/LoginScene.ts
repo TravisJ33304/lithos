@@ -1,9 +1,11 @@
 import * as Phaser from "phaser";
 import type { NetworkClient } from "../net/NetworkClient";
+import { SupabaseAuthClient } from "../net/SupabaseAuthClient";
 import { gameUi } from "../ui/GameUiManager";
 
 export class LoginScene extends Phaser.Scene {
 	private net!: NetworkClient;
+	private auth!: SupabaseAuthClient;
 	private username = "guest";
 	private bgGraphics!: Phaser.GameObjects.Graphics;
 
@@ -19,7 +21,8 @@ export class LoginScene extends Phaser.Scene {
 	create(): void {
 		gameUi.hideMenu();
 		gameUi.showLogin(this.username, this.net.getEndpoint());
-		gameUi.onLoginRequested((username) => this.startConnection(username));
+		this.auth = new SupabaseAuthClient();
+		gameUi.onLoginRequested((payload) => this.startConnection(payload));
 		this.cameras.main.setBackgroundColor("#0d1117");
 
 		this.bgGraphics = this.add.graphics();
@@ -59,18 +62,34 @@ export class LoginScene extends Phaser.Scene {
 		}
 	}
 
-	private startConnection(username: string): void {
-		gameUi.setLoginStatus("Connecting to server", "loading");
-		this.net
-			.connect()
-			.then(() => {
-				gameUi.setLoginStatus("Joining shard", "loading");
-				this.net.send({ Join: { token: username } });
-				this.net.send("RequestCraftingState");
-			})
-			.catch((err) => {
-				console.error("Connection failed", err);
-				gameUi.setLoginStatus("Connection failed", "error");
-			});
+	private async startConnection(payload: {
+		username: string;
+		password: string;
+	}): Promise<void> {
+		try {
+			gameUi.setLoginStatus("Resolving auth token", "loading");
+			const token = await this.resolveJoinToken(payload);
+			gameUi.setLoginStatus("Connecting to server", "loading");
+			await this.net.connect();
+			gameUi.setLoginStatus("Joining shard", "loading");
+			this.net.send({ Join: { token } });
+			this.net.send("RequestCraftingState");
+		} catch (err) {
+			console.error("Connection failed", err);
+			gameUi.setLoginStatus(
+				err instanceof Error ? err.message : "Connection failed",
+				"error",
+			);
+		}
+	}
+
+	private async resolveJoinToken(payload: {
+		username: string;
+		password: string;
+	}): Promise<string> {
+		if (this.auth.isConfigured() && payload.password.length > 0) {
+			return this.auth.signInOrSignUp(payload.username, payload.password);
+		}
+		return payload.username;
 	}
 }

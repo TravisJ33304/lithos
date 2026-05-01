@@ -51,6 +51,7 @@ export class AsteroidBaseScene extends Phaser.Scene {
 
 		// Network listener.
 		this.net.onMessage((msg: ServerMessage) => {
+			if (!this.scene.isActive(this.scene.key)) return;
 			if ("StateSnapshot" in msg) {
 				this.handleSnapshot(msg.StateSnapshot.entities);
 			} else if ("ZoneChanged" in msg) {

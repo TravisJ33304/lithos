@@ -118,6 +118,8 @@ Run these in addition to Playwright to validate server-authoritative gameplay be
 - [ ] Menu renders with server list and editable endpoint.
 - [ ] Choosing a server row updates endpoint input.
 - [ ] Join enters `LoginScene`, then successful join enters `OverworldScene`.
+- [ ] With `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` configured, email/password login obtains a Supabase access token and the game server accepts the Join.
+- [ ] With Supabase env left unconfigured, dev callsign login still works for local unauthenticated playtests.
 - [ ] Onboarding overlay appears on first Overworld load and auto-hides.
 
 ## 5.2 Core Movement, Combat, and Respawn
@@ -179,6 +181,7 @@ npm run build
 From repo root:
 
 ```bash
+supabase db reset
 cargo check
 cargo test --workspace
 ```
@@ -188,6 +191,7 @@ cargo test --workspace
 ## 7. Known Testing Constraints
 
 - Final vector sprite asset validation is out of scope for this pass.
+- `supabase db reset` requires the Supabase CLI stack to be running locally.
 - Live-integration Playwright coverage depends on `LITHOS_RUN_LIVE_E2E=1` and a protocol-ready local server at `ws://localhost:9001`.
 - Some advanced multiplayer/raid scenarios still require manual multi-client playtests.
 

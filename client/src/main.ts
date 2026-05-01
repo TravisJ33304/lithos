@@ -10,6 +10,12 @@ import { BootScene } from "./scenes/BootScene";
 import { LoginScene } from "./scenes/LoginScene";
 import { OverworldScene } from "./scenes/OverworldScene";
 
+declare global {
+	interface Window {
+		__PHASER_GAME__?: Phaser.Game;
+	}
+}
+
 const config: Phaser.Types.Core.GameConfig = {
 	type: Phaser.AUTO,
 	width: 1280,
@@ -36,4 +42,4 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
-(window as any).__PHASER_GAME__ = game;
+window.__PHASER_GAME__ = game;
