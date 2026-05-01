@@ -15,6 +15,7 @@ import type {
 } from "../types/protocol";
 import { gameUi } from "../ui/GameUiManager";
 import { resolveSprite } from "../config/SpriteRegistry";
+import { ParticleManager } from "../systems/ParticleManager";
 
 /** A single chunk of the tilemap received from the server. */
 interface TileChunk {
@@ -105,6 +106,7 @@ export class OverworldScene extends Phaser.Scene {
 	private currentAmmo = 0;
 	private maxAmmo = 0;
 	private ammoText!: Phaser.GameObjects.Text;
+	private particles!: ParticleManager;
 
 	// Chat state
 	private chatMessages: Array<{ from: string; text: string; color: string }> =
@@ -468,9 +470,12 @@ export class OverworldScene extends Phaser.Scene {
 						target_entity_id: nearestId,
 					},
 				});
+				this.particles.createMiningSparks(myEntity.sprite.x, myEntity.sprite.y);
 			} else {
 				const dx = worldPoint.x - myEntity.sprite.x;
 				const dy = worldPoint.y - myEntity.sprite.y;
+				const angle = Math.atan2(dy, dx);
+				this.particles.createMuzzleFlash(myEntity.sprite.x, myEntity.sprite.y, angle);
 				this.net.send({
 					Fire: {
 						direction: { x: dx, y: dy },
@@ -514,6 +519,10 @@ export class OverworldScene extends Phaser.Scene {
 					this.oxygenText.setColor(color);
 				}
 			} else if ("PlayerDied" in msg) {
+				const diedEnt = this.entities.get(msg.PlayerDied.entity_id);
+				if (diedEnt) {
+					this.particles.createDeathPoof(diedEnt.sprite.x, diedEnt.sprite.y);
+				}
 				if (msg.PlayerDied.entity_id === this.myEntityId) {
 					this.isDead = true;
 					gameUi.showDeathOverlay(true);
@@ -631,6 +640,7 @@ export class OverworldScene extends Phaser.Scene {
 		});
 
 		this.updateHotbarUI();
+		this.particles = new ParticleManager(this);
 		this.net.send("RequestCraftingState");
 		this.net.send("RequestPowerState");
 	}
