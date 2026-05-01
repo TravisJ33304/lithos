@@ -4,11 +4,19 @@ import type {
 	DynamicEventKind,
 	DynamicEventSnapshot,
 	EntitySnapshot,
+	InteractableSnapshot,
+	InventoryItemStack,
+	InventorySnapshot,
+	ItemDefinition,
+	ItemRarity,
+	PowerNetworkSnapshot,
 	ProgressionSnapshot,
 	RaidStateSnapshot,
+	RecipeDefinition,
 	ServerMessage,
 	SkillBranch,
 	SnapshotEntityType,
+	TerrainType,
 	TraderQuote,
 	Vec2,
 	ZoneId,
@@ -116,6 +124,19 @@ function normalizeDynamicEventKind(k: unknown): DynamicEventKind {
 	throw new Error(`invalid DynamicEventKind: ${s}`);
 }
 
+function normalizeTerrainType(v: unknown): TerrainType {
+	const s = asString(v);
+	const allowed: TerrainType[] = [
+		"Empty",
+		"Rock",
+		"DeepRavine",
+		"AsteroidField",
+		"AutomataSpire",
+	];
+	if ((allowed as string[]).includes(s)) return s as TerrainType;
+	throw new Error(`invalid TerrainType: ${s}`);
+}
+
 function normalizeEntitySnapshot(e: unknown): EntitySnapshot {
 	if (Array.isArray(e) && e.length >= 5) {
 		return {
@@ -141,12 +162,122 @@ function normalizeTraderQuote(q: unknown): TraderQuote {
 			sell_price: asNumber(q[3]),
 			demand_scalar: asNumber(q[4]),
 			available_credits: asNumber(q[5]),
+			daily_credit_limit: q.length >= 7 ? asNumber(q[6]) : 0,
+			daily_credits_used: q.length >= 8 ? asNumber(q[7]) : 0,
 		};
 	}
 	if (isRecord(q) && "trader_entity_id" in q) {
-		return q as unknown as TraderQuote;
+		return {
+			...(q as unknown as TraderQuote),
+			daily_credit_limit: asNumber(
+				(q as Record<string, unknown>).daily_credit_limit ?? 0,
+			),
+			daily_credits_used: asNumber(
+				(q as Record<string, unknown>).daily_credits_used ?? 0,
+			),
+		};
 	}
 	throw new Error("invalid TraderQuote");
+}
+
+function normalizeItemRarity(v: unknown): ItemRarity {
+	const s = asString(v);
+	if (s === "Common" || s === "Uncommon" || s === "Rare" || s === "Epic") {
+		return s;
+	}
+	throw new Error(`invalid ItemRarity: ${s}`);
+}
+
+function normalizeInventoryItemStack(v: unknown): InventoryItemStack {
+	if (isRecord(v)) {
+		return {
+			item: asString(v.item),
+			quantity: asNumber(v.quantity),
+			rarity: normalizeItemRarity(v.rarity),
+			category: asString(v.category) as InventoryItemStack["category"],
+		};
+	}
+	if (Array.isArray(v) && v.length >= 4) {
+		return {
+			item: asString(v[0]),
+			quantity: asNumber(v[1]),
+			rarity: normalizeItemRarity(v[2]),
+			category: asString(v[3]) as InventoryItemStack["category"],
+		};
+	}
+	throw new Error("invalid InventoryItemStack");
+}
+
+function normalizeInventorySnapshot(v: unknown): InventorySnapshot {
+	if (isRecord(v)) {
+		const items = Array.isArray(v.items)
+			? v.items.map(normalizeInventoryItemStack)
+			: [];
+		return { entity_id: asNumber(v.entity_id), items };
+	}
+	if (Array.isArray(v) && v.length >= 2 && Array.isArray(v[1])) {
+		return {
+			entity_id: asNumber(v[0]),
+			items: v[1].map(normalizeInventoryItemStack),
+		};
+	}
+	throw new Error("invalid InventorySnapshot");
+}
+
+function normalizeItemDefinition(v: unknown): ItemDefinition {
+	if (isRecord(v)) {
+		return {
+			item: asString(v.item),
+			display_name: asString(v.display_name),
+			description: asString(v.description),
+			rarity: normalizeItemRarity(v.rarity),
+			category: asString(v.category) as ItemDefinition["category"],
+			stack_limit: asNumber(v.stack_limit),
+		};
+	}
+	throw new Error("invalid ItemDefinition");
+}
+
+function normalizeRecipeDefinition(v: unknown): RecipeDefinition {
+	if (isRecord(v)) {
+		return {
+			name: asString(v.name),
+			output: asString(v.output),
+			required_branch: normalizeSkillBranch(v.required_branch),
+			required_level: asNumber(v.required_level),
+			inputs: Array.isArray(v.inputs) ? v.inputs.map(asString) : [],
+		};
+	}
+	throw new Error("invalid RecipeDefinition");
+}
+
+function normalizeInteractableSnapshot(v: unknown): InteractableSnapshot {
+	if (isRecord(v)) {
+		return {
+			target_entity_id: asNumber(v.target_entity_id),
+			kind: asString(v.kind) as InteractableSnapshot["kind"],
+			required_tool:
+				v.required_tool === null || v.required_tool === undefined
+					? null
+					: asString(v.required_tool),
+			can_interact: Boolean(v.can_interact),
+		};
+	}
+	throw new Error("invalid InteractableSnapshot");
+}
+
+function normalizePowerNetworkSnapshot(v: unknown): PowerNetworkSnapshot {
+	if (isRecord(v)) {
+		return {
+			network_id: asNumber(v.network_id),
+			zone: normalizeZoneId(v.zone),
+			generation_kw: asNumber(v.generation_kw),
+			load_kw: asNumber(v.load_kw),
+			consumers_powered: asNumber(v.consumers_powered),
+			consumers_total: asNumber(v.consumers_total),
+		};
+	}
+	throw new Error("invalid PowerNetworkSnapshot");
 }
 
 function normalizeProgressionSnapshot(p: unknown): ProgressionSnapshot {
@@ -333,6 +464,20 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				>["InventoryUpdated"],
 			};
 		}
+		case "InventorySnapshot": {
+			if (isRecord(payload) && "inventory" in payload) {
+				return {
+					InventorySnapshot: {
+						inventory: normalizeInventorySnapshot(payload.inventory),
+					},
+				};
+			}
+			return {
+				InventorySnapshot: {
+					inventory: normalizeInventorySnapshot(payload),
+				},
+			};
+		}
 		case "SpawnProjectile": {
 			if (Array.isArray(payload) && payload.length >= 3) {
 				return {
@@ -423,6 +568,21 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				>["ProgressionUpdated"],
 			};
 		}
+		case "CraftingCatalog": {
+			if (isRecord(payload)) {
+				return {
+					CraftingCatalog: {
+						items: Array.isArray(payload.items)
+							? payload.items.map(normalizeItemDefinition)
+							: [],
+						recipes: Array.isArray(payload.recipes)
+							? payload.recipes.map(normalizeRecipeDefinition)
+							: [],
+					},
+				};
+			}
+			throw new Error("invalid CraftingCatalog");
+		}
 		case "DynamicEventStarted": {
 			if (Array.isArray(payload) && payload.length >= 1) {
 				return {
@@ -445,6 +605,20 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 					ServerMessage,
 					{ DynamicEventEnded: unknown }
 				>["DynamicEventEnded"],
+			};
+		}
+		case "InteractableUpdated": {
+			if (isRecord(payload) && "interactable" in payload) {
+				return {
+					InteractableUpdated: {
+						interactable: normalizeInteractableSnapshot(payload.interactable),
+					},
+				};
+			}
+			return {
+				InteractableUpdated: {
+					interactable: normalizeInteractableSnapshot(payload),
+				},
 			};
 		}
 		case "RaidWarning": {
@@ -569,6 +743,31 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				>["AmmoChanged"],
 			};
 		}
+		case "PowerState": {
+			if (isRecord(payload)) {
+				return {
+					PowerState: {
+						zone: normalizeZoneId(payload.zone),
+						networks: Array.isArray(payload.networks)
+							? payload.networks.map(normalizePowerNetworkSnapshot)
+							: [],
+					},
+				};
+			}
+			throw new Error("invalid PowerState");
+		}
+		case "RaidTargets": {
+			if (isRecord(payload)) {
+				return {
+					RaidTargets: {
+						defender_faction_ids: Array.isArray(payload.defender_faction_ids)
+							? payload.defender_faction_ids.map(asNumber)
+							: [],
+					},
+				};
+			}
+			throw new Error("invalid RaidTargets");
+		}
 		case "WorldMapChunk": {
 			if (Array.isArray(payload) && payload.length >= 3) {
 				const tilesRaw = payload[2];
@@ -576,15 +775,15 @@ export function normalizeServerMessage(raw: unknown): ServerMessage {
 				const tiles = tilesRaw.map((t: unknown) => {
 					if (Array.isArray(t) && t.length >= 3) {
 						return {
-							terrain: asString(t[0]),
-							ceiling: asString(t[1]),
+							terrain: normalizeTerrainType(t[0]),
+							ceiling: asString(t[1]) as "Open" | "Enclosed",
 							height: asNumber(t[2]),
 						};
 					}
 					if (isRecord(t)) {
 						return {
-							terrain: asString(t.terrain),
-							ceiling: asString(t.ceiling),
+							terrain: normalizeTerrainType(t.terrain),
+							ceiling: asString(t.ceiling) as "Open" | "Enclosed",
 							height: asNumber(t.height),
 						};
 					}

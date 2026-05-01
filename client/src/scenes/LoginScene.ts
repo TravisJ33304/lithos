@@ -1,19 +1,23 @@
 import * as Phaser from "phaser";
 import type { NetworkClient } from "../net/NetworkClient";
+import { gameUi } from "../ui/GameUiManager";
 
 export class LoginScene extends Phaser.Scene {
 	private net!: NetworkClient;
+	private username = "guest";
 	private bgGraphics!: Phaser.GameObjects.Graphics;
 
 	constructor() {
 		super({ key: "LoginScene" });
 	}
 
-	init(data: { net: NetworkClient }): void {
+	init(data: { net: NetworkClient; username?: string }): void {
 		this.net = data.net;
+		this.username = data.username ?? "guest";
 	}
 
 	create(): void {
+		gameUi.hideMenu();
 		this.cameras.main.setBackgroundColor("#0d1117");
 		const { width, height } = this.cameras.main;
 
@@ -64,6 +68,7 @@ export class LoginScene extends Phaser.Scene {
 		// Focus the input
 		const inputEl = document.getElementById("username") as HTMLInputElement;
 		if (inputEl) {
+			inputEl.value = this.username;
 			inputEl.focus();
 		}
 
@@ -90,11 +95,17 @@ export class LoginScene extends Phaser.Scene {
 		this.net.onMessage((msg) => {
 			if ("JoinAck" in msg) {
 				const ack = msg.JoinAck;
+				gameUi.showGameplay();
 				this.scene.start("OverworldScene", {
 					net: this.net,
 					entityId: ack.entity_id,
 					worldSeed: ack.world_seed,
 				});
+			} else if ("CraftingCatalog" in msg) {
+				gameUi.updateCraftingCatalog(
+					msg.CraftingCatalog.items,
+					msg.CraftingCatalog.recipes,
+				);
 			}
 		});
 	}
@@ -127,6 +138,7 @@ export class LoginScene extends Phaser.Scene {
 			.connect()
 			.then(() => {
 				this.net.send({ Join: { token: username } });
+				this.net.send("RequestCraftingState");
 			})
 			.catch((err) => {
 				console.error("Connection failed", err);

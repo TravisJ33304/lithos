@@ -13,6 +13,7 @@ import type {
 	TileData,
 	Vec2,
 } from "../types/protocol";
+import { gameUi } from "../ui/GameUiManager";
 
 /** A single chunk of the tilemap received from the server. */
 interface TileChunk {
@@ -132,6 +133,13 @@ export class OverworldScene extends Phaser.Scene {
 	}
 
 	create(): void {
+		gameUi.showGameplay();
+		gameUi.showOnboarding(true);
+		this.time.delayedCall(12000, () => gameUi.showOnboarding(false));
+		gameUi.showDeathOverlay(false);
+		gameUi.onChatSubmit((text) => {
+			this.net.send({ Chat: { channel: "Global", text } });
+		});
 		// --- World background ---
 		this.cameras.main.setBackgroundColor("#0d1117");
 
@@ -421,6 +429,22 @@ export class OverworldScene extends Phaser.Scene {
 
 			const myEntity = this.entities.get(this.myEntityId);
 			if (!myEntity) return;
+			if (pointer.rightButtonDown()) {
+				let nearestId: number | null = null;
+				let nearestDist = 220.0 * 220.0;
+				for (const [id, ent] of this.entities) {
+					if (id === this.myEntityId) continue;
+					const distSq =
+						(ent.sprite.x - myEntity.sprite.x) ** 2 +
+						(ent.sprite.y - myEntity.sprite.y) ** 2;
+					if (distSq < nearestDist) {
+						nearestDist = distSq;
+						nearestId = id;
+					}
+				}
+				this.net.send({ Interact: { target_entity_id: nearestId } });
+				return;
+			}
 
 			// Check if mining laser is selected in hotbar
 			const selectedItem = this.getSelectedHotbarItem();
@@ -491,6 +515,7 @@ export class OverworldScene extends Phaser.Scene {
 			} else if ("PlayerDied" in msg) {
 				if (msg.PlayerDied.entity_id === this.myEntityId) {
 					this.isDead = true;
+					gameUi.showDeathOverlay(true);
 					this.healthText.setText(
 						"DEAD - Inventory Dropped!\nPress R to Respawn",
 					);
@@ -514,10 +539,15 @@ export class OverworldScene extends Phaser.Scene {
 						this.inventoryText.setText(
 							`Inventory: [${this.inventoryItems.join(", ")}]`,
 						);
+						gameUi.updateInventory(null, this.inventoryItems);
 						this.updateHotbarUI();
 					} catch (e) {
 						console.error("Failed to parse inventory", e);
 					}
+				}
+			} else if ("InventorySnapshot" in msg) {
+				if (msg.InventorySnapshot.inventory.entity_id === this.myEntityId) {
+					gameUi.updateInventory(msg.InventorySnapshot.inventory);
 				}
 			} else if ("ResourceDepleted" in msg) {
 				const ent = this.entities.get(msg.ResourceDepleted.entity_id);
@@ -546,11 +576,20 @@ export class OverworldScene extends Phaser.Scene {
 				);
 			} else if ("TraderQuotes" in msg) {
 				this.traderQuotes = msg.TraderQuotes.quotes;
+				gameUi.updateTraderQuotes(this.traderQuotes);
 			} else if ("CreditsChanged" in msg) {
 				this.factionCredits = msg.CreditsChanged.balance;
 				this.creditsText.setText(
 					`Credits: ${this.factionCredits.toLocaleString()}`,
 				);
+				gameUi.updateVitals({
+					health: `${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
+					oxygen: `${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
+					ammo: `${this.currentAmmo}/${this.maxAmmo}`,
+					credits: this.factionCredits.toLocaleString(),
+					fps: `${Math.round(this.game.loop.actualFps)}`,
+					tick: this.tickText.text.replace("Tick: ", ""),
+				});
 			} else if ("TradeFailed" in msg) {
 				this.flashText(
 					this.tradeFailedText,
@@ -576,10 +615,23 @@ export class OverworldScene extends Phaser.Scene {
 						? "SYSTEM"
 						: `E${msg.ChatMessage.from_entity_id}`;
 				this.addChatMessage(from, msg.ChatMessage.text, color);
+			} else if ("ProgressionUpdated" in msg) {
+				if (msg.ProgressionUpdated.entity_id === this.myEntityId) {
+					gameUi.updateProgression(msg.ProgressionUpdated.branches);
+				}
+			} else if ("CraftingCatalog" in msg) {
+				gameUi.updateCraftingCatalog(
+					msg.CraftingCatalog.items,
+					msg.CraftingCatalog.recipes,
+				);
+			} else if ("PowerState" in msg) {
+				gameUi.updatePowerState(msg.PowerState.networks);
 			}
 		});
 
 		this.updateHotbarUI();
+		this.net.send("RequestCraftingState");
+		this.net.send("RequestPowerState");
 	}
 
 	update(_time: number, delta: number): void {
@@ -617,8 +669,9 @@ export class OverworldScene extends Phaser.Scene {
 					this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
 				)
 			) {
-				this.net.send({ Respawn: null });
+				this.net.send("Respawn");
 				this.isDead = false;
+				gameUi.showDeathOverlay(false);
 				this.healthText.setColor("#ff3333");
 			}
 			return; // don't process movement if dead
@@ -733,6 +786,14 @@ export class OverworldScene extends Phaser.Scene {
 
 		// --- HUD ---
 		this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`);
+		gameUi.updateVitals({
+			health: `${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
+			oxygen: `${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
+			ammo: `${this.currentAmmo}/${this.maxAmmo}`,
+			credits: this.factionCredits.toLocaleString(),
+			fps: `${Math.round(this.game.loop.actualFps)}`,
+			tick: this.tickText.text.replace("Tick: ", ""),
+		});
 	}
 
 	private handleWorldMapChunk(chunkMsg: {
@@ -966,6 +1027,7 @@ export class OverworldScene extends Phaser.Scene {
 		if (this.chatMessages.length > 50) {
 			this.chatMessages.shift();
 		}
+		gameUi.pushChat(`[${from}] ${text}`);
 		if (this.chatVisible) {
 			this.renderChatUI();
 		}

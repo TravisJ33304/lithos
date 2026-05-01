@@ -7,6 +7,7 @@ import * as Phaser from "phaser";
 import { ApiClient } from "../net/ApiClient";
 import { NetworkClient } from "../net/NetworkClient";
 import type { ServerListing } from "../types/protocol";
+import { gameUi } from "../ui/GameUiManager";
 
 // Central API URL (configurable via env or fallback to localhost).
 const API_URL = "http://localhost:3000";
@@ -44,6 +45,11 @@ export class BootScene extends Phaser.Scene {
 
 		this.api = new ApiClient(API_URL);
 		this.net = new NetworkClient();
+		gameUi.hideAllGameplay();
+		gameUi.onJoinRequested(({ username, endpoint }) => {
+			this.net.setEndpoint(endpoint);
+			this.scene.start("LoginScene", { net: this.net, username });
+		});
 
 		this.fetchServers();
 	}
@@ -85,9 +91,17 @@ export class BootScene extends Phaser.Scene {
 				})
 				.setOrigin(0.5);
 			this.uiElements.push(emptyText);
+			gameUi.showMenu([]);
 			this.showDirectConnect();
 			return;
 		}
+		gameUi.showMenu(
+			this.serverList.map((server) => ({
+				name: server.name,
+				endpoint: server.websocket_url,
+				detail: `[${server.region}] ${server.population}/${server.capacity}`,
+			})),
+		);
 
 		let yOff = 160;
 		for (const server of this.serverList) {

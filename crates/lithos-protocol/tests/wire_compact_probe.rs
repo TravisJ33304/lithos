@@ -116,6 +116,8 @@ fn compact_misc_server_message_shapes() {
                     sell_price: 2.0,
                     demand_scalar: 1.5,
                     available_credits: 100,
+                    daily_credit_limit: 5000,
+                    daily_credits_used: 0,
                 }],
             },
         ),
@@ -232,6 +234,8 @@ fn trader_quotes_progression_dynamic_raid_shapes() {
             sell_price: 2.0,
             demand_scalar: 3.0,
             available_credits: 4,
+            daily_credit_limit: 5000,
+            daily_credits_used: 10,
         }],
     };
     let v = decode_value(&codec::encode(&tq).unwrap());

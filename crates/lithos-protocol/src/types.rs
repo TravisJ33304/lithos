@@ -274,6 +274,98 @@ pub struct TraderQuote {
     pub sell_price: f32,
     pub demand_scalar: f32,
     pub available_credits: i64,
+    pub daily_credit_limit: i64,
+    pub daily_credits_used: i64,
+}
+
+/// Item rarity tier for UI presentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ItemRarity {
+    Common,
+    Uncommon,
+    Rare,
+    Epic,
+}
+
+/// High-level category for item grouping in UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ItemCategory {
+    Resource,
+    Component,
+    Consumable,
+    Weapon,
+    Tool,
+    Structure,
+    Utility,
+}
+
+/// Stack representation for one inventory entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InventoryItemStack {
+    pub item: String,
+    pub quantity: u32,
+    pub rarity: ItemRarity,
+    pub category: ItemCategory,
+}
+
+/// Structured inventory payload for UI and gameplay actions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InventorySnapshot {
+    pub entity_id: EntityId,
+    pub items: Vec<InventoryItemStack>,
+}
+
+/// Metadata for an item definition used by UI and crafting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemDefinition {
+    pub item: String,
+    pub display_name: String,
+    pub description: String,
+    pub rarity: ItemRarity,
+    pub category: ItemCategory,
+    pub stack_limit: u32,
+}
+
+/// Metadata for recipes exposed to the client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecipeDefinition {
+    pub name: String,
+    pub output: String,
+    pub required_branch: SkillBranch,
+    pub required_level: u32,
+    pub inputs: Vec<String>,
+}
+
+/// Classification of an interactable world target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InteractableKind {
+    ResourceNode,
+    SalvageSite,
+    LootContainer,
+    HackingTarget,
+    FabricationPlant,
+    CommsArray,
+    Trader,
+}
+
+/// Lightweight interaction state suitable for HUD prompts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InteractableSnapshot {
+    pub target_entity_id: EntityId,
+    pub kind: InteractableKind,
+    pub required_tool: Option<String>,
+    pub can_interact: bool,
+}
+
+/// Per-network power status used by base UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PowerNetworkSnapshot {
+    pub network_id: u64,
+    pub zone: ZoneId,
+    pub generation_kw: f32,
+    pub load_kw: f32,
+    pub consumers_powered: u32,
+    pub consumers_total: u32,
 }
 
 /// Snapshot of a single entity's state, sent from server to clients.

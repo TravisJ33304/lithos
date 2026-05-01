@@ -10,6 +10,8 @@ pub struct TraderMarketState {
     pub base_price: f32,
     pub demand_scalar: f32,
     pub available_credits: i64,
+    pub daily_credit_limit: i64,
+    pub daily_credits_used: i64,
 }
 
 impl TraderMarketState {
@@ -24,6 +26,8 @@ impl TraderMarketState {
             sell_price: sell,
             demand_scalar: self.demand_scalar,
             available_credits: self.available_credits,
+            daily_credit_limit: self.daily_credit_limit,
+            daily_credits_used: self.daily_credits_used,
         }
     }
 

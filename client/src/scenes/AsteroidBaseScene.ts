@@ -7,6 +7,7 @@
 import * as Phaser from "phaser";
 import type { NetworkClient } from "../net/NetworkClient";
 import type { EntitySnapshot, ServerMessage } from "../types/protocol";
+import { gameUi } from "../ui/GameUiManager";
 
 interface BaseData {
 	net: NetworkClient;
@@ -38,6 +39,7 @@ export class AsteroidBaseScene extends Phaser.Scene {
 	}
 
 	create(): void {
+		gameUi.showGameplay();
 		this.cameras.main.setBackgroundColor("#1a0a2e");
 
 		const { width, height } = this.cameras.main;
@@ -104,9 +106,20 @@ export class AsteroidBaseScene extends Phaser.Scene {
 						`O₂: ${Math.max(0, Math.floor(msg.OxygenChanged.current))}/${msg.OxygenChanged.max}`,
 					);
 					this.oxygenText.setColor(color);
+					gameUi.updateVitals({
+						health: "--",
+						oxygen: `${Math.max(0, Math.floor(msg.OxygenChanged.current))}/${msg.OxygenChanged.max}`,
+						ammo: "--",
+						credits: "--",
+						fps: `${Math.round(this.game.loop.actualFps)}`,
+						tick: "--",
+					});
 				}
+			} else if ("PowerState" in msg) {
+				gameUi.updatePowerState(msg.PowerState.networks);
 			}
 		});
+		this.net.send("RequestPowerState");
 	}
 
 	update(): void {

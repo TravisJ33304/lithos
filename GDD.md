@@ -45,29 +45,32 @@ The backend is split into two distinct tiers to ensure stability and scalability
 * **Dynamic Events:** Weather events (Meteor Showers, Solar Flares) and dynamic POIs (Crashed Freighters) spawn organically to drive conflict.
 
 ### 2.2 Overworld Resources & Ecology
+
 To drive the core gathering loop, the Overworld contains dynamically respawning nodes and interactive objects:
-*   **Raw Resource Nodes (Renewable):**
-    *   *Iron/Copper Outcroppings:* Found everywhere; used for basic structures and ammo. Mined with lasers/drills.
-    *   *Titanium Nodes:* Found in rocky biomes; used for mid-tier structures and weapons.
-    *   *Silica Deposits:* Found in arid biomes; refined into glass and basic electronics.
-    *   *Uranium/Plutonium Veins:* Highly radioactive, found only in the Core or Mid-Zone craters. Required for late-game power and high-tier ammo.
-    *   *Bio-Mass (Flora/Fungi):* Harvested for hydroponics seeds, basic healing items, and bio-fuel.
-*   **Salvage & Scrap (Static/Semi-Renewable):**
-    *   *Rusted Husks:* Abandoned vehicles and old mechs. Harvested with a Salvage Torch for mechanical components (gears, servos, wires).
-    *   *Data Terminals:* Hacked to yield "Encrypted Drives" (sold for high Credits) or temporary minimap intel.
-*   **Loot Containers (Instanced/Guarded):**
-    *   *Supply Crates:* Basic scattered loot (ammo, scrap, low-tier meds).
-    *   *Automata Receptacles:* Found inside robot structures. Contain specialized tech components (Logic Cores, Optics, Plasma Cells) required for Drones and Turrets.
-    *   *Military Lockboxes:* Highly contested containers found at major POIs or airdrops. Contain fully crafted high-tier weapons or rare attachments.
+
+* **Raw Resource Nodes (Renewable):**
+  * *Iron/Copper Outcroppings:* Found everywhere; used for basic structures and ammo. Mined with lasers/drills.
+  * *Titanium Nodes:* Found in rocky biomes; used for mid-tier structures and weapons.
+  * *Silica Deposits:* Found in arid biomes; refined into glass and basic electronics.
+  * *Uranium/Plutonium Veins:* Highly radioactive, found only in the Core or Mid-Zone craters. Required for late-game power and high-tier ammo.
+  * *Bio-Mass (Flora/Fungi):* Harvested for hydroponics seeds, basic healing items, and bio-fuel.
+* **Salvage & Scrap (Static/Semi-Renewable):**
+  * *Rusted Husks:* Abandoned vehicles and old mechs. Harvested with a Salvage Torch for mechanical components (gears, servos, wires).
+  * *Data Terminals:* Hacked to yield "Encrypted Drives" (sold for high Credits) or temporary minimap intel.
+* **Loot Containers (Instanced/Guarded):**
+  * *Supply Crates:* Basic scattered loot (ammo, scrap, low-tier meds).
+  * *Automata Receptacles:* Found inside robot structures. Contain specialized tech components (Logic Cores, Optics, Plasma Cells) required for Drones and Turrets.
+  * *Military Lockboxes:* Highly contested containers found at major POIs or airdrops. Contain fully crafted high-tier weapons or rare attachments.
 
 ### 2.3 Points of Interest (POIs) & Dynamic Events
-*   **Static POIs:** Generated at map creation.
-    *   *Automated Fabrication Plants:* Heavily guarded dungeons. Allow crafting one tier above the player's current skill level.
-    *   *Derelict Comms Arrays:* Hackable towers that reveal high-tier nodes or player locations.
-*   **Dynamic Events:** Spawn organically to drive conflict.
-    *   *Meteor Showers:* Bombard zones, leaving temporary exotic mineral nodes.
-    *   *Crashed Freighters:* Global broadcast event. Highly radioactive initially, guarded by surviving mechs, containing massive loot payloads.
-    *   *Solar Flares:* Temporarily disable minimaps and specific electronic weapons in certain biomes.
+
+* **Static POIs:** Generated at map creation.
+  * *Automated Fabrication Plants:* Heavily guarded dungeons. Allow crafting one tier above the player's current skill level.
+  * *Derelict Comms Arrays:* Hackable towers that reveal high-tier nodes or player locations.
+* **Dynamic Events:** Spawn organically to drive conflict.
+  * *Meteor Showers:* Bombard zones, leaving temporary exotic mineral nodes.
+  * *Crashed Freighters:* Global broadcast event. Highly radioactive initially, guarded by surviving mechs, containing massive loot payloads.
+  * *Solar Flares:* Temporarily disable minimaps and specific electronic weapons in certain biomes.
 
 ### 2.4 Asteroid Bases (Zones 1-100)
 

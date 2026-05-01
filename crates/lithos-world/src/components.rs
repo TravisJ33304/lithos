@@ -148,6 +148,7 @@ pub struct GuardPost {
 pub enum ResourceType {
     Iron,
     Copper,
+    Titanium,
     Silica,
     Uranium,
     Plutonium,
@@ -220,6 +221,8 @@ pub enum TileType {
     Door,
     Workbench,
     Generator,
+    HydroponicsTray,
+    DroneBay,
 }
 
 /// Marks an entity as a structure placed on a base grid.
@@ -249,6 +252,17 @@ pub struct PowerConsumer {
 #[derive(Component, Debug, Clone)]
 pub struct LifeSupport {
     pub oxygen_output_per_tick: f32,
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct Hydroponics {
+    pub growth: f32,
+    pub powered_growth_per_tick: f32,
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct DroneBay {
+    pub active_drones: u32,
 }
 
 /// Player's oxygen level.

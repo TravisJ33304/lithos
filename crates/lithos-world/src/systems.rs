@@ -472,6 +472,38 @@ pub fn life_support_system(
     }
 }
 
+/// Advances hydroponics growth while trays are powered.
+pub fn hydroponics_growth_system(
+    mut trays: Query<(
+        &mut crate::components::Hydroponics,
+        &crate::components::PowerConsumer,
+    )>,
+) {
+    for (mut tray, consumer) in trays.iter_mut() {
+        if consumer.is_powered {
+            tray.growth = (tray.growth + tray.powered_growth_per_tick).min(100.0);
+        } else {
+            tray.growth = (tray.growth - 0.1).max(0.0);
+        }
+    }
+}
+
+/// Keeps drone bay runtime state in sync with available power.
+pub fn automation_drones_system(
+    mut bays: Query<(
+        &mut crate::components::DroneBay,
+        &crate::components::PowerConsumer,
+    )>,
+) {
+    for (mut bay, consumer) in bays.iter_mut() {
+        if consumer.is_powered {
+            bay.active_drones = bay.active_drones.max(1);
+        } else {
+            bay.active_drones = 0;
+        }
+    }
+}
+
 /// Scrapper Dispenser default loadout items.
 const SCRAPPER_LOADOUT: &[&str] = &["mining_laser", "scrap", "scrap"];
 /// Cooldown between free loadouts (5 minutes at 20 TPS).
@@ -596,6 +628,7 @@ pub fn npc_ai_system(
     mut npcs: Query<
         (
             &mut Npc,
+            &mut Health,
             &mut Velocity,
             &Position,
             Option<&mut NpcPath>,
@@ -605,7 +638,15 @@ pub fn npc_ai_system(
     >,
     players: Query<&Position, (With<Player>, Without<Dead>)>,
 ) {
-    for (mut npc, mut vel, pos, path, guard) in npcs.iter_mut() {
+    for (mut npc, mut health, mut vel, pos, path, guard) in npcs.iter_mut() {
+        if npc.npc_type != NpcType::Trader
+            && npc.state != NpcState::Retreat
+            && health.current <= health.max * 0.3
+        {
+            npc.state = NpcState::Retreat;
+            npc.state_entered_tick = tick.tick;
+            npc.target = None;
+        }
         let type_speed_mult = match npc.npc_type {
             NpcType::Rover => 1.2,
             NpcType::Drone => 1.0,
@@ -644,7 +685,12 @@ pub fn npc_ai_system(
                 let dir = (retreat_target - pos.0).normalize();
                 vel.0 = dir * speed * 0.7;
                 if (retreat_target - pos.0).length_squared() < 400.0 {
-                    npc.state = NpcState::Patrol;
+                    vel.0 = lithos_protocol::Vec2::ZERO;
+                    health.current = (health.current + 3.0).min(health.max);
+                    if health.current >= health.max * 0.8 {
+                        npc.state = NpcState::Patrol;
+                        npc.state_entered_tick = tick.tick;
+                    }
                 }
             }
             NpcState::Aggro => {
@@ -1055,6 +1101,8 @@ pub fn trader_market_system(
                     base_price,
                     demand_scalar: 1.0,
                     available_credits: 2_500,
+                    daily_credit_limit: 5_000,
+                    daily_credits_used: 0,
                 });
             }
         }
@@ -1069,6 +1117,9 @@ pub fn trader_market_system(
         let sold_to_trader = cycle as i32;
         let bought_from_trader = (6 - cycle) as i32;
         quote.apply_daily_volume(sold_to_trader, bought_from_trader);
+        if tick.tick.is_multiple_of(24_000) {
+            quote.daily_credits_used = 0;
+        }
         quote.available_credits = (quote.available_credits
             + i64::from(bought_from_trader * 20 - sold_to_trader * 10))
         .clamp(500, 10_000);
@@ -1163,6 +1214,7 @@ pub fn mining_system(
         let item_name = match node.resource_type {
             ResourceType::Iron => "iron",
             ResourceType::Copper => "copper",
+            ResourceType::Titanium => "titanium",
             ResourceType::Silica => "silica",
             ResourceType::Uranium => "uranium",
             ResourceType::Plutonium => "plutonium",
@@ -1292,6 +1344,12 @@ pub fn trade_system(
                     .push((req.entity_id, "trader lacks credits".to_string()));
                 continue;
             }
+            if quote.daily_credits_used + total_price > quote.daily_credit_limit {
+                trade_events
+                    .failures
+                    .push((req.entity_id, "trader daily limit reached".to_string()));
+                continue;
+            }
 
             // Remove items.
             let mut removed = 0u32;
@@ -1312,6 +1370,7 @@ pub fn trade_system(
             {
                 q.available_credits -= total_price;
                 q.demand_scalar = (q.demand_scalar - 0.02).clamp(0.4, 2.2);
+                q.daily_credits_used += total_price;
             }
             let bal = vaults.balances.entry(faction_id).or_insert(0);
             *bal = bal.saturating_add(total_price);
@@ -1474,9 +1533,10 @@ pub fn dynamic_events_system(
 /// Apply gameplay effects from active dynamic events.
 #[allow(clippy::type_complexity)]
 pub fn dynamic_event_effects_system(
+    mut commands: Commands,
     active: Res<ActiveDynamicEvents>,
     mut combat_events: ResMut<CombatEvents>,
-    registry: Res<EntityRegistry>,
+    mut registry: ResMut<EntityRegistry>,
     tick: Res<TickCounter>,
     mut players: Query<(Entity, &mut Health, &Zone), (With<Player>, Without<Dead>)>,
 ) {
@@ -1502,15 +1562,55 @@ pub fn dynamic_event_effects_system(
                         }
                     }
                 }
+                if tick.tick.is_multiple_of(120) {
+                    let node_id = registry.next_entity_id();
+                    let offset = ((tick.tick % 11) as f32 - 5.0) * 80.0;
+                    let ecs = commands
+                        .spawn((
+                            Position(lithos_protocol::Vec2::new(offset, -offset)),
+                            Zone(lithos_protocol::ZoneId::Overworld),
+                            Collider { radius: 18.0 },
+                            ResourceNode {
+                                resource_type: ResourceType::Titanium,
+                                yield_amount: 6,
+                                vein_id: None,
+                            },
+                        ))
+                        .id();
+                    registry.register(node_id, ecs);
+                }
             }
             lithos_protocol::DynamicEventKind::SolarFlare => {
                 // Solar flares are primarily a client-side minimap disruption.
                 // Server-side we could reduce NPC accuracy, but for now
-                // the event is broadcast-only.
+                // the event is broadcast-only with light power stress.
+                if tick.tick.is_multiple_of(100) {
+                    for (_, mut health, zone) in players.iter_mut() {
+                        if zone.0 == lithos_protocol::ZoneId::Overworld {
+                            health.current -= 1.0;
+                        }
+                    }
+                }
             }
             lithos_protocol::DynamicEventKind::CrashedFreighter => {
-                // Crashed freighters are broadcast-only in this milestone.
-                // Future work: spawn a loot container and guarding NPCs.
+                if tick.tick.is_multiple_of(150) {
+                    let loot_id = registry.next_entity_id();
+                    let ecs = commands
+                        .spawn((
+                            Position(lithos_protocol::Vec2::new(300.0, 300.0)),
+                            Zone(lithos_protocol::ZoneId::Overworld),
+                            Collider { radius: 24.0 },
+                            crate::components::LootContainer {
+                                container_type:
+                                    crate::components::LootContainerType::MilitaryLockbox,
+                                loot_table_id: "crashed_freighter".to_string(),
+                                is_opened: false,
+                                guard_radius: 280.0,
+                            },
+                        ))
+                        .id();
+                    registry.register(loot_id, ecs);
+                }
             }
         }
     }

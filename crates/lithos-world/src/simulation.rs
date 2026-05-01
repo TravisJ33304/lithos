@@ -59,6 +59,8 @@ impl Simulation {
                 systems::bounds_system,
                 systems::power_grid_system,
                 systems::life_support_system,
+                systems::hydroponics_growth_system,
+                systems::automation_drones_system,
                 systems::hit_detection_system,
                 systems::projectile_expiration_system,
                 systems::zone_transfer_system,

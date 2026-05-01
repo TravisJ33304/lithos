@@ -142,6 +142,50 @@ pub static RECIPES: &[Recipe] = &[
         required_branch: SkillBranch::Fabrication,
         required_level: 1,
     },
+    Recipe {
+        name: "hydroponics_tray",
+        inputs: &["iron_plate", "glass", "bio_fuel"],
+        output: "hydroponics_tray",
+        required_branch: SkillBranch::Fabrication,
+        required_level: 2,
+    },
+    // ── Ballistics branch recipes ─────────────────────────────────────────────
+    Recipe {
+        name: "ballistic_ammo",
+        inputs: &["iron", "copper"],
+        output: "ballistic_ammo",
+        required_branch: SkillBranch::Ballistics,
+        required_level: 1,
+    },
+    Recipe {
+        name: "breach_charge",
+        inputs: &["plutonium_core", "battery"],
+        output: "breach_charge",
+        required_branch: SkillBranch::Ballistics,
+        required_level: 3,
+    },
+    // ── Cybernetics branch recipes ────────────────────────────────────────────
+    Recipe {
+        name: "sensor_node",
+        inputs: &["circuit", "glass"],
+        output: "sensor_node",
+        required_branch: SkillBranch::Cybernetics,
+        required_level: 1,
+    },
+    Recipe {
+        name: "drone_core",
+        inputs: &["logic_core", "battery", "circuit"],
+        output: "drone_core",
+        required_branch: SkillBranch::Cybernetics,
+        required_level: 3,
+    },
+    Recipe {
+        name: "drone_bay",
+        inputs: &["drone_core", "titanium_plate", "circuit"],
+        output: "drone_bay",
+        required_branch: SkillBranch::Cybernetics,
+        required_level: 4,
+    },
 ];
 
 /// Look up a recipe by its unique name.

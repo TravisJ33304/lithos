@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    ChatChannel, DynamicEventSnapshot, EntityId, EntitySnapshot, PlayerId, ProgressionSnapshot,
-    RaidStateSnapshot, SkillBranch, TraderQuote, Vec2, ZoneId,
+    ChatChannel, DynamicEventSnapshot, EntityId, EntitySnapshot, InteractableSnapshot,
+    InventorySnapshot, ItemDefinition, PlayerId, PowerNetworkSnapshot, ProgressionSnapshot,
+    RaidStateSnapshot, RecipeDefinition, SkillBranch, TraderQuote, Vec2, ZoneId,
 };
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,44 @@ pub enum ClientMessage {
         /// Quantity to buy.
         quantity: u32,
     },
+
+    /// Context interaction (right click / use key) against a nearby target.
+    Interact {
+        /// Optional explicit interaction target.
+        target_entity_id: Option<EntityId>,
+    },
+
+    /// Alternate fire mode for equipped weapon/tool.
+    AltFire {
+        /// The target direction vector.
+        direction: Vec2,
+        /// Client-measured round trip latency in milliseconds.
+        client_latency_ms: u16,
+    },
+
+    /// Drop an inventory item stack into the world.
+    DropItem { item: String, quantity: u32 },
+
+    /// Use an item from inventory.
+    UseItem { item: String },
+
+    /// Equip an item to a named slot.
+    EquipItem { item: String, slot: String },
+
+    /// Request full crafting catalog and player unlock state.
+    RequestCraftingState,
+
+    /// Request current power networks for the active zone.
+    RequestPowerState,
+
+    /// Begin a timed hack interaction.
+    StartHack { target_entity_id: EntityId },
+
+    /// Cancel active hack interaction.
+    CancelHack,
+
+    /// Query online factions that can currently be raided.
+    RequestRaidTargets,
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +197,9 @@ pub enum ServerMessage {
         items_json: String,
     },
 
+    /// Structured inventory update payload for UI migration.
+    InventorySnapshot { inventory: InventorySnapshot },
+
     /// Notification that a projectile was spawned. Useful for client-side VFX.
     SpawnProjectile {
         entity_id: EntityId,
@@ -179,6 +221,12 @@ pub enum ServerMessage {
     /// Updated NPC trader market quotes.
     TraderQuotes { quotes: Vec<TraderQuote> },
 
+    /// Full item and recipe metadata catalog.
+    CraftingCatalog {
+        items: Vec<ItemDefinition>,
+        recipes: Vec<RecipeDefinition>,
+    },
+
     /// Updated progression stats for a player.
     ProgressionUpdated {
         entity_id: EntityId,
@@ -190,6 +238,9 @@ pub enum ServerMessage {
 
     /// A dynamic world event ended.
     DynamicEventEnded { event_id: u64 },
+
+    /// Nearby interactable focus and requirements.
+    InteractableUpdated { interactable: InteractableSnapshot },
 
     /// Defender warning for an incoming breach.
     RaidWarning { raid: RaidStateSnapshot },
@@ -241,6 +292,15 @@ pub enum ServerMessage {
         ammo: u32,
         max_ammo: u32,
     },
+
+    /// Power network summary for the player's current zone.
+    PowerState {
+        zone: ZoneId,
+        networks: Vec<PowerNetworkSnapshot>,
+    },
+
+    /// Online factions currently available as raid targets.
+    RaidTargets { defender_faction_ids: Vec<u64> },
 
     /// The server is kicking the client.
     Disconnect { reason: String },

@@ -115,6 +115,73 @@ export interface TraderQuote {
 	sell_price: number;
 	demand_scalar: number;
 	available_credits: number;
+	daily_credit_limit: number;
+	daily_credits_used: number;
+}
+
+export type ItemRarity = "Common" | "Uncommon" | "Rare" | "Epic";
+
+export type ItemCategory =
+	| "Resource"
+	| "Component"
+	| "Consumable"
+	| "Weapon"
+	| "Tool"
+	| "Structure"
+	| "Utility";
+
+export interface InventoryItemStack {
+	item: string;
+	quantity: number;
+	rarity: ItemRarity;
+	category: ItemCategory;
+}
+
+export interface InventorySnapshot {
+	entity_id: number;
+	items: InventoryItemStack[];
+}
+
+export interface ItemDefinition {
+	item: string;
+	display_name: string;
+	description: string;
+	rarity: ItemRarity;
+	category: ItemCategory;
+	stack_limit: number;
+}
+
+export interface RecipeDefinition {
+	name: string;
+	output: string;
+	required_branch: SkillBranch;
+	required_level: number;
+	inputs: string[];
+}
+
+export type InteractableKind =
+	| "ResourceNode"
+	| "SalvageSite"
+	| "LootContainer"
+	| "HackingTarget"
+	| "FabricationPlant"
+	| "CommsArray"
+	| "Trader";
+
+export interface InteractableSnapshot {
+	target_entity_id: number;
+	kind: InteractableKind;
+	required_tool: string | null;
+	can_interact: boolean;
+}
+
+export interface PowerNetworkSnapshot {
+	network_id: number;
+	zone: ZoneId;
+	generation_kw: number;
+	load_kw: number;
+	consumers_powered: number;
+	consumers_total: number;
 }
 
 // ── Client → Server ──────────────────────────────────────────────────
@@ -133,7 +200,17 @@ export type ClientMessage =
 	| { InitiateRaid: { defender_faction_id: number } }
 	| { Mine: { target_entity_id: number | null } }
 	| { SellItem: { item: string; quantity: number } }
-	| { BuyItem: { item: string; quantity: number } };
+	| { BuyItem: { item: string; quantity: number } }
+	| { Interact: { target_entity_id: number | null } }
+	| { AltFire: { direction: Vec2; client_latency_ms: number } }
+	| { DropItem: { item: string; quantity: number } }
+	| { UseItem: { item: string } }
+	| { EquipItem: { item: string; slot: string } }
+	| "RequestCraftingState"
+	| "RequestPowerState"
+	| { StartHack: { target_entity_id: number } }
+	| "CancelHack"
+	| "RequestRaidTargets";
 
 // ── Server → Client ──────────────────────────────────────────────────
 
@@ -158,6 +235,7 @@ export type ServerMessage =
 	| { OxygenChanged: { entity_id: number; current: number; max: number } }
 	| { PlayerDied: { entity_id: number } }
 	| { InventoryUpdated: { entity_id: number; items_json: string } }
+	| { InventorySnapshot: { inventory: InventorySnapshot } }
 	| { SpawnProjectile: { entity_id: number; position: Vec2; velocity: Vec2 } }
 	| {
 			ChatMessage: {
@@ -170,6 +248,9 @@ export type ServerMessage =
 	| { CreditsChanged: { faction_id: number; balance: number } }
 	| { TraderQuotes: { quotes: TraderQuote[] } }
 	| {
+			CraftingCatalog: { items: ItemDefinition[]; recipes: RecipeDefinition[] };
+	  }
+	| {
 			ProgressionUpdated: {
 				entity_id: number;
 				branches: ProgressionSnapshot[];
@@ -177,6 +258,7 @@ export type ServerMessage =
 	  }
 	| { DynamicEventStarted: { event: DynamicEventSnapshot } }
 	| { DynamicEventEnded: { event_id: number } }
+	| { InteractableUpdated: { interactable: InteractableSnapshot } }
 	| { RaidWarning: { raid: RaidStateSnapshot } }
 	| { RaidStarted: { raid: RaidStateSnapshot } }
 	| { RaidEnded: { raid: RaidStateSnapshot; attacker_won: boolean } }
@@ -194,4 +276,6 @@ export type ServerMessage =
 	| { CraftDenied: { reason: string } }
 	| { TradeFailed: { reason: string } }
 	| { AmmoChanged: { entity_id: number; ammo: number; max_ammo: number } }
+	| { PowerState: { zone: ZoneId; networks: PowerNetworkSnapshot[] } }
+	| { RaidTargets: { defender_faction_ids: number[] } }
 	| { Disconnect: { reason: string } };

@@ -35,6 +35,7 @@ This report compares the current implementation against the [Game Design Documen
 | §2.4 Asteroid Bases | **Implemented** | Faction-based private zones with persistence across sessions. |
 
 **Gaps:**
+
 - Titanium must be bought from traders (not mineable) — gameplay imbalance
 - No salvage/hacking interaction system
 - Dynamic events lack physical impact beyond damage broadcasts

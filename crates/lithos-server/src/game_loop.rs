@@ -11,13 +11,14 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use lithos_protocol::{
-    ChatChannel, ClientMessage, DynamicEventSnapshot, EntityId, EntitySnapshot, RaidStateSnapshot,
-    ServerMessage, SkillBranch, Vec2, ZoneId, codec,
+    ChatChannel, ClientMessage, DynamicEventSnapshot, EntityId, EntitySnapshot, InteractableKind,
+    InteractableSnapshot, RaidStateSnapshot, ServerMessage, SkillBranch, Vec2, ZoneId, codec,
 };
 use lithos_world::components::{
-    BaseTile, BossPhase, Collider, Flying, Health, Inventory, LastLoadoutTick, Npc, NpcState,
+    BaseTile, BossPhase, Collider, CommsArray, DroneBay as DroneBayComponent, FabricationPlant,
+    Flying, HackingTarget, Health, Hydroponics, Inventory, Item, LastLoadoutTick, Npc, NpcState,
     NpcType, Oxygen, Player, Position, PositionHistory, PowerConsumer, PowerGenerator, Progression,
-    ResourceNode, ResourceType, TileType, Velocity, Weapon, Zone,
+    ResourceNode, ResourceType, SalvageSite, TileType, Velocity, Weapon, Zone,
 };
 use lithos_world::resources::{
     ChatEvent, ChatEvents, EntityRegistry, FactionVaults, FireRequest, InputQueue,
@@ -177,7 +178,7 @@ fn raid_snapshot(raid: &RaidState, tick: u64, dt: f32) -> RaidStateSnapshot {
 }
 
 fn seed_world(sim: &mut Simulation, world_seed: u32) {
-    use lithos_world::components::{CommsArray, FabricationPlant, SalvageSite};
+    use lithos_world::components::{CommsArray, FabricationPlant, HackingTarget, SalvageSite};
     use lithos_world::tilemap::{CHUNK_WORLD_SIZE, TerrainType as TileTerrain};
 
     let mut rng = rand::thread_rng();
@@ -494,6 +495,20 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
         sim,
         &mut rng,
         &generator,
+        ResourceType::Titanium,
+        45,
+        6..10,
+        |tile: &lithos_world::tilemap::Tile| {
+            matches!(tile.terrain, TileTerrain::Rock | TileTerrain::AsteroidField)
+        },
+        |biome| matches!(biome, Biome::MidZone),
+        &mut next_vein_id,
+    );
+
+    spawn_resource_veins(
+        sim,
+        &mut rng,
+        &generator,
         ResourceType::Silica,
         50,
         6..12,
@@ -660,6 +675,11 @@ fn seed_world(sim: &mut Simulation, world_seed: u32) {
                 CommsArray {
                     hackable: true,
                     reveals_minimap: true,
+                },
+                HackingTarget {
+                    hack_time_seconds: 6.0,
+                    reward_table_id: "comms_array".to_string(),
+                    is_hacked: false,
                 },
             ))
             .id();
@@ -1149,6 +1169,8 @@ async fn handle_event(
                                 "door" => Some(TileType::Door),
                                 "workbench" => Some(TileType::Workbench),
                                 "generator" => Some(TileType::Generator),
+                                "hydroponics_tray" => Some(TileType::HydroponicsTray),
+                                "drone_bay" => Some(TileType::DroneBay),
                                 _ => None,
                             };
 
@@ -1175,11 +1197,23 @@ async fn handle_event(
                                             fuel_remaining: 99_999.0,
                                         });
                                     }
-                                    TileType::Door | TileType::Workbench => {
+                                    TileType::Door
+                                    | TileType::Workbench
+                                    | TileType::HydroponicsTray
+                                    | TileType::DroneBay => {
                                         entity.insert(PowerConsumer {
                                             required_kw: 10.0,
                                             is_powered: false,
                                         });
+                                        if tt == TileType::HydroponicsTray {
+                                            entity.insert(Hydroponics {
+                                                growth: 0.0,
+                                                powered_growth_per_tick: 0.3,
+                                            });
+                                        }
+                                        if tt == TileType::DroneBay {
+                                            entity.insert(DroneBayComponent { active_drones: 0 });
+                                        }
                                     }
                                     TileType::Wall => {}
                                 }
@@ -1371,6 +1405,8 @@ async fn handle_event(
                     "door" => Some(TileType::Door),
                     "workbench" => Some(TileType::Workbench),
                     "generator" => Some(TileType::Generator),
+                    "hydroponics_tray" => Some(TileType::HydroponicsTray),
+                    "drone_bay" => Some(TileType::DroneBay),
                     _ => None,
                 };
 
@@ -1394,11 +1430,23 @@ async fn handle_event(
                                 fuel_remaining: 99_999.0,
                             });
                         }
-                        TileType::Door | TileType::Workbench => {
+                        TileType::Door
+                        | TileType::Workbench
+                        | TileType::HydroponicsTray
+                        | TileType::DroneBay => {
                             entity.insert(PowerConsumer {
                                 required_kw: 10.0,
                                 is_powered: false,
                             });
+                            if tile_type == TileType::HydroponicsTray {
+                                entity.insert(Hydroponics {
+                                    growth: 0.0,
+                                    powered_growth_per_tick: 0.3,
+                                });
+                            }
+                            if tile_type == TileType::DroneBay {
+                                entity.insert(DroneBayComponent { active_drones: 0 });
+                            }
                         }
                         TileType::Wall => {}
                     }
@@ -1500,6 +1548,370 @@ async fn handle_event(
                         is_sell: false,
                     });
             }
+            ClientMessage::Interact { target_entity_id } => {
+                let Some(target_id) = target_entity_id else {
+                    return Ok(());
+                };
+                let Some(&player_ecs) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&entity_id)
+                else {
+                    return Ok(());
+                };
+                let Some(&target_ecs) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&target_id)
+                else {
+                    return Ok(());
+                };
+                let (player_pos, player_zone) = {
+                    let Ok(player_ent) = sim.world.get_entity(player_ecs) else {
+                        return Ok(());
+                    };
+                    let pos = player_ent
+                        .get::<Position>()
+                        .map(|position| position.0)
+                        .unwrap_or(Vec2::ZERO);
+                    let zone = player_ent
+                        .get::<Zone>()
+                        .map(|zone| zone.0)
+                        .unwrap_or(ZoneId::Overworld);
+                    (pos, zone)
+                };
+                let (target_pos, target_zone) = {
+                    let Ok(target_ent) = sim.world.get_entity(target_ecs) else {
+                        return Ok(());
+                    };
+                    let pos = target_ent
+                        .get::<Position>()
+                        .map(|position| position.0)
+                        .unwrap_or(Vec2::ZERO);
+                    let zone = target_ent
+                        .get::<Zone>()
+                        .map(|zone| zone.0)
+                        .unwrap_or(ZoneId::Overworld);
+                    (pos, zone)
+                };
+                if player_zone != target_zone
+                    || (player_pos - target_pos).length_squared() > 220.0 * 220.0
+                {
+                    return Ok(());
+                }
+                let mut interactable = InteractableSnapshot {
+                    target_entity_id: target_id,
+                    kind: InteractableKind::ResourceNode,
+                    required_tool: None,
+                    can_interact: true,
+                };
+
+                let mut inventory_items = {
+                    let Ok(player_ent) = sim.world.get_entity(player_ecs) else {
+                        return Ok(());
+                    };
+                    player_ent
+                        .get::<Inventory>()
+                        .map(|inv| inv.items.clone())
+                        .unwrap_or_default()
+                };
+
+                let mut consumed = false;
+                if let Ok(mut target) = sim.world.get_entity_mut(target_ecs) {
+                    if let Some(mut salvage) = target.get_mut::<SalvageSite>() {
+                        interactable.kind = InteractableKind::SalvageSite;
+                        interactable.required_tool = Some("salvage_torch".to_string());
+                        let has_tool = inventory_items.iter().any(|item| item == "salvage_torch");
+                        interactable.can_interact = has_tool;
+                        if has_tool && salvage.yield_remaining > 0 {
+                            salvage.yield_remaining = salvage.yield_remaining.saturating_sub(1);
+                            inventory_items.push("gears".to_string());
+                            consumed = salvage.yield_remaining == 0;
+                        }
+                    } else if let Some(mut hack) = target.get_mut::<HackingTarget>() {
+                        interactable.kind = InteractableKind::HackingTarget;
+                        interactable.required_tool = Some("hacking_tool".to_string());
+                        if !hack.is_hacked {
+                            hack.is_hacked = true;
+                            inventory_items.push("encrypted_drive".to_string());
+                            sim.world.resource_mut::<ProgressionQueue>().gains.push(
+                                XpGainRequest {
+                                    entity_id,
+                                    branch: SkillBranch::Cybernetics,
+                                    amount: 8,
+                                },
+                            );
+                        }
+                    } else if target.get::<CommsArray>().is_some() {
+                        interactable.kind = InteractableKind::CommsArray;
+                        inventory_items.push("minimap_intel".to_string());
+                    } else if target.get::<FabricationPlant>().is_some() {
+                        interactable.kind = InteractableKind::FabricationPlant;
+                        inventory_items.push("fab_plant_boost".to_string());
+                    }
+                }
+
+                if let Ok(mut player_ent) = sim.world.get_entity_mut(player_ecs)
+                    && let Some(mut inv) = player_ent.get_mut::<Inventory>()
+                {
+                    inv.items = inventory_items.clone();
+                }
+
+                if consumed {
+                    sim.world
+                        .resource_mut::<EntityRegistry>()
+                        .unregister(target_id);
+                    if let Ok(target) = sim.world.get_entity_mut(target_ecs) {
+                        target.despawn();
+                    }
+                }
+
+                send_to_entity(
+                    connections,
+                    entity_id,
+                    &ServerMessage::InventoryUpdated {
+                        entity_id,
+                        items_json: serde_json::to_string(&inventory_items)
+                            .unwrap_or_else(|_| "[]".to_string()),
+                    },
+                );
+                send_to_entity(
+                    connections,
+                    entity_id,
+                    &ServerMessage::InteractableUpdated { interactable },
+                );
+            }
+            ClientMessage::AltFire {
+                direction,
+                client_latency_ms,
+            } => {
+                sim.world
+                    .resource_mut::<InputQueue>()
+                    .fires
+                    .push(FireRequest {
+                        entity_id,
+                        direction,
+                        client_latency_ms,
+                    });
+            }
+            ClientMessage::DropItem { item, quantity } => {
+                let Some(&ecs_entity) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&entity_id)
+                else {
+                    return Ok(());
+                };
+                let drop_origin = {
+                    let ent = sim.world.entity(ecs_entity);
+                    (
+                        ent.get::<Position>()
+                            .map(|position| position.0)
+                            .unwrap_or(Vec2::ZERO),
+                        ent.get::<Zone>()
+                            .map(|zone| zone.0)
+                            .unwrap_or(ZoneId::Overworld),
+                    )
+                };
+                let mut removed = 0u32;
+                let mut updated_inventory: Vec<String> = Vec::new();
+                if let Some(mut inv) = sim.world.entity_mut(ecs_entity).get_mut::<Inventory>() {
+                    let mut removed_local = 0u32;
+                    inv.items.retain(|owned| {
+                        if removed_local < quantity && owned == &item {
+                            removed_local += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    updated_inventory = inv.items.clone();
+                    removed = removed_local;
+                }
+                for idx in 0..removed {
+                    let id = sim.world.resource_mut::<EntityRegistry>().next_entity_id();
+                    let world_offset = idx as f32 * 10.0;
+                    let ecs = sim
+                        .world
+                        .spawn((
+                            Item {
+                                item_type: item.clone(),
+                            },
+                            Position(Vec2::new(
+                                drop_origin.0.x + world_offset,
+                                drop_origin.0.y + world_offset,
+                            )),
+                            Zone(drop_origin.1),
+                            Collider { radius: 10.0 },
+                        ))
+                        .id();
+                    sim.world.resource_mut::<EntityRegistry>().register(id, ecs);
+                }
+                if !updated_inventory.is_empty() || removed > 0 {
+                    send_to_entity(
+                        connections,
+                        entity_id,
+                        &ServerMessage::InventoryUpdated {
+                            entity_id,
+                            items_json: serde_json::to_string(&updated_inventory)
+                                .unwrap_or_else(|_| "[]".to_string()),
+                        },
+                    );
+                }
+            }
+            ClientMessage::UseItem { item } => {
+                let Some(&ecs_entity) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&entity_id)
+                else {
+                    return Ok(());
+                };
+                let mut used = false;
+                if let Some(mut inv) = sim.world.entity_mut(ecs_entity).get_mut::<Inventory>()
+                    && let Some(index) = inv.items.iter().position(|owned| owned == &item)
+                    && item == "medkit"
+                {
+                    inv.items.remove(index);
+                    used = true;
+                }
+                if used {
+                    if let Some(mut health) = sim.world.entity_mut(ecs_entity).get_mut::<Health>() {
+                        health.current = (health.current + 35.0).min(health.max);
+                    }
+                    let inv = sim
+                        .world
+                        .entity(ecs_entity)
+                        .get::<Inventory>()
+                        .map(|inv| inv.items.clone())
+                        .unwrap_or_default();
+                    send_to_entity(
+                        connections,
+                        entity_id,
+                        &ServerMessage::InventoryUpdated {
+                            entity_id,
+                            items_json: serde_json::to_string(&inv)
+                                .unwrap_or_else(|_| "[]".to_string()),
+                        },
+                    );
+                }
+            }
+            ClientMessage::EquipItem { item, slot: _slot } => {
+                let Some(&ecs_entity) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&entity_id)
+                else {
+                    return Ok(());
+                };
+                let has_item = sim
+                    .world
+                    .entity(ecs_entity)
+                    .get::<Inventory>()
+                    .map(|inv| inv.items.iter().any(|owned| owned == &item))
+                    .unwrap_or(false);
+                if has_item {
+                    sim.world
+                        .resource_mut::<ProgressionQueue>()
+                        .gains
+                        .push(XpGainRequest {
+                            entity_id,
+                            branch: SkillBranch::Ballistics,
+                            amount: 1,
+                        });
+                }
+            }
+            ClientMessage::RequestCraftingState => {
+                send_to_entity(
+                    connections,
+                    entity_id,
+                    &ServerMessage::CraftingCatalog {
+                        items: lithos_world::content_catalog::item_definitions(),
+                        recipes: lithos_world::content_catalog::recipe_definitions(),
+                    },
+                );
+            }
+            ClientMessage::RequestPowerState => {
+                let zone = sim
+                    .world
+                    .resource::<EntityRegistry>()
+                    .by_id
+                    .get(&entity_id)
+                    .copied()
+                    .and_then(|ecs| sim.world.entity(ecs).get::<Zone>().map(|zone| zone.0))
+                    .unwrap_or(ZoneId::Overworld);
+
+                let mut generation_kw = 0.0_f32;
+                let mut load_kw = 0.0_f32;
+                let mut consumers_total = 0_u32;
+                let mut consumers_powered = 0_u32;
+
+                let mut gen_query = sim.world.query::<(&Zone, &PowerGenerator)>();
+                for (generator_zone, generator) in gen_query.iter(&sim.world) {
+                    if generator_zone.0 == zone && generator.fuel_remaining > 0.0 {
+                        generation_kw += generator.output_kw;
+                    }
+                }
+
+                let mut consumer_query = sim.world.query::<(&Zone, &PowerConsumer)>();
+                for (consumer_zone, consumer) in consumer_query.iter(&sim.world) {
+                    if consumer_zone.0 != zone {
+                        continue;
+                    }
+                    consumers_total += 1;
+                    load_kw += consumer.required_kw;
+                    if consumer.is_powered {
+                        consumers_powered += 1;
+                    }
+                }
+
+                send_to_entity(
+                    connections,
+                    entity_id,
+                    &ServerMessage::PowerState {
+                        zone,
+                        networks: vec![lithos_protocol::PowerNetworkSnapshot {
+                            network_id: 1,
+                            zone,
+                            generation_kw,
+                            load_kw,
+                            consumers_powered,
+                            consumers_total,
+                        }],
+                    },
+                );
+            }
+            ClientMessage::StartHack { target_entity_id } => {
+                let Some(&target_ecs) = sim
+                    .world
+                    .resource::<EntityRegistry>()
+                    .by_id
+                    .get(&target_entity_id)
+                else {
+                    return Ok(());
+                };
+                if let Some(mut hack) = sim.world.entity_mut(target_ecs).get_mut::<HackingTarget>()
+                    && !hack.is_hacked
+                {
+                    hack.is_hacked = true;
+                    sim.world
+                        .resource_mut::<ProgressionQueue>()
+                        .gains
+                        .push(XpGainRequest {
+                            entity_id,
+                            branch: SkillBranch::Cybernetics,
+                            amount: 12,
+                        });
+                }
+            }
+            ClientMessage::CancelHack => {}
+            ClientMessage::RequestRaidTargets => {
+                let requester_faction = connections.get(entity_id).and_then(|conn| conn.faction_id);
+                let mut defenders: Vec<u64> = connections
+                    .iter()
+                    .filter_map(|conn| conn.faction_id)
+                    .filter(|faction_id| Some(*faction_id) != requester_faction)
+                    .collect();
+                defenders.sort_unstable();
+                defenders.dedup();
+                send_to_entity(
+                    connections,
+                    entity_id,
+                    &ServerMessage::RaidTargets {
+                        defender_faction_ids: defenders,
+                    },
+                );
+            }
             ClientMessage::InitiateRaid {
                 defender_faction_id,
             } => {
@@ -1517,6 +1929,51 @@ async fn handle_event(
                 };
 
                 if attacker_faction_id == defender_faction_id {
+                    return Ok(());
+                }
+                let defender_online = connections
+                    .iter()
+                    .any(|conn| conn.faction_id == Some(defender_faction_id));
+                if !defender_online {
+                    send_to_entity(
+                        connections,
+                        entity_id,
+                        &ServerMessage::TradeFailed {
+                            reason: "defender faction is offline".to_string(),
+                        },
+                    );
+                    return Ok(());
+                }
+
+                let Some(&attacker_ecs) =
+                    sim.world.resource::<EntityRegistry>().by_id.get(&entity_id)
+                else {
+                    return Ok(());
+                };
+                let mut has_breach_generator = false;
+                if let Some(mut inv) = sim.world.entity_mut(attacker_ecs).get_mut::<Inventory>()
+                    && let Some(idx) = inv.items.iter().position(|item| item == "breach_generator")
+                {
+                    inv.items.remove(idx);
+                    has_breach_generator = true;
+                    send_to_entity(
+                        connections,
+                        entity_id,
+                        &ServerMessage::InventoryUpdated {
+                            entity_id,
+                            items_json: serde_json::to_string(&inv.items)
+                                .unwrap_or_else(|_| "[]".to_string()),
+                        },
+                    );
+                }
+                if !has_breach_generator {
+                    send_to_entity(
+                        connections,
+                        entity_id,
+                        &ServerMessage::TradeFailed {
+                            reason: "breach_generator required".to_string(),
+                        },
+                    );
                     return Ok(());
                 }
 

@@ -94,4 +94,48 @@ describe("normalizeServerMessage (legacy map-shaped payloads)", () => {
 		expect(msg.StateSnapshot.entities).toHaveLength(1);
 		expect(msg.StateSnapshot.entities[0].zone).toEqual({ AsteroidBase: 3 });
 	});
+
+	it("normalizes structured inventory snapshot", () => {
+		const msg = normalizeServerMessage({
+			InventorySnapshot: {
+				inventory: {
+					entity_id: 10,
+					items: [
+						{
+							item: "iron",
+							quantity: 4,
+							rarity: "Common",
+							category: "Resource",
+						},
+					],
+				},
+			},
+		});
+		expect("InventorySnapshot" in msg).toBe(true);
+		if (!("InventorySnapshot" in msg))
+			throw new Error("expected InventorySnapshot");
+		expect(msg.InventorySnapshot.inventory.items[0].item).toBe("iron");
+	});
+
+	it("normalizes trader quote with daily limits", () => {
+		const msg = normalizeServerMessage({
+			TraderQuotes: {
+				quotes: [
+					{
+						trader_entity_id: 1,
+						item: "iron",
+						buy_price: 10,
+						sell_price: 12,
+						demand_scalar: 1,
+						available_credits: 2500,
+						daily_credit_limit: 5000,
+						daily_credits_used: 100,
+					},
+				],
+			},
+		});
+		expect("TraderQuotes" in msg).toBe(true);
+		if (!("TraderQuotes" in msg)) throw new Error("expected TraderQuotes");
+		expect(msg.TraderQuotes.quotes[0].daily_credit_limit).toBe(5000);
+	});
 });
