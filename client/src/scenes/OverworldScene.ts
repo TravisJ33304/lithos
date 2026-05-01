@@ -14,6 +14,7 @@ import type {
 	Vec2,
 } from "../types/protocol";
 import { gameUi } from "../ui/GameUiManager";
+import { resolveSprite } from "../config/SpriteRegistry";
 
 /** A single chunk of the tilemap received from the server. */
 interface TileChunk {
@@ -32,7 +33,7 @@ interface OverworldData {
 
 /** Runtime state for a rendered entity. */
 interface RenderedEntity {
-	sprite: Phaser.GameObjects.Shape;
+	sprite: Phaser.GameObjects.Sprite;
 	facingLine?: Phaser.GameObjects.Graphics;
 	label: Phaser.GameObjects.Text;
 	targetX: number;
@@ -908,80 +909,78 @@ export class OverworldScene extends Phaser.Scene {
 		const isMe = entity.id === this.myEntityId;
 		const type = entity.entity_type;
 
-		let color = 0xffffff;
-		let size = 14;
-		let labelText = "Entity";
+		const spriteDef = resolveSprite(type);
+		let sprite: Phaser.GameObjects.Sprite;
+
+		if (type === "Unknown") {
+			// Structures still use the structure texture
+			sprite = this.add.sprite(
+				entity.position.x,
+				entity.position.y,
+				spriteDef.texture,
+			);
+			sprite.setScale(spriteDef.scale ?? 1.0);
+		} else if (type === "Projectile") {
+			sprite = this.add.sprite(
+				entity.position.x,
+				entity.position.y,
+				spriteDef.texture,
+			);
+			sprite.setScale(spriteDef.scale ?? 0.5);
+		} else if (type === "Item") {
+			sprite = this.add.sprite(
+				entity.position.x,
+				entity.position.y,
+				spriteDef.texture,
+			);
+			sprite.setScale(spriteDef.scale ?? 0.5);
+		} else {
+			// Standard entity sprite
+			sprite = this.add.sprite(
+				entity.position.x,
+				entity.position.y,
+				spriteDef.texture,
+			);
+			sprite.setScale(spriteDef.scale ?? 1.0);
+		}
+
+		// Apply tint for differentiation
+		if (type === "Player" && isMe) {
+			sprite.setTint(0x58a6ff); // Blue for self
+		} else if (type === "Player") {
+			sprite.setTint(0x7c3aed); // Purple for others
+		} else if (type === "Hostile") {
+			sprite.setTint(0xff4444); // Red tint fallback
+		}
+
+		sprite.setDepth(10);
+
+		// Label
+		let labelText = "";
 		let labelColor = "#8b949e";
 
 		if (type === "Player") {
-			color = isMe ? 0x58a6ff : 0x7c3aed;
 			labelText = isMe ? "YOU" : `Player ${entity.id}`;
 			labelColor = isMe ? "#58a6ff" : "#7c3aed";
 		} else if (type === "Hostile") {
-			color = 0xff4444;
 			labelText = "Automata";
 			labelColor = "#ff4444";
 		} else if (type === "Trader") {
-			color = 0x2ea043;
 			labelText = "Trader";
 			labelColor = "#2ea043";
 		} else if (type === "ResourceNode") {
-			color = 0x8b949e;
 			labelText = "Ore";
 			labelColor = "#8b949e";
-		} else if (type === "Item") {
-			color = 0xd2a8ff;
-			size = 6;
-			labelText = "";
-		} else if (type === "Unknown") {
-			// Used for base structures for now
-			color = 0x888888;
-			size = 20; // 40x40 tile
-			labelText = "";
-		} else if (type === "Projectile") {
-			color = 0xffa500;
-			size = 5;
-			labelText = "";
-		}
-
-		let sprite: Phaser.GameObjects.Shape;
-		if (type === "Unknown") {
-			// Base tile rectangle
-			sprite = this.add.rectangle(
-				entity.position.x,
-				entity.position.y,
-				40,
-				40,
-				color,
-				1.0,
-			);
-			sprite.setStrokeStyle(1, 0x000000);
-		} else {
-			sprite = this.add.circle(
-				entity.position.x,
-				entity.position.y,
-				size,
-				color,
-			);
-		}
-		sprite.setDepth(10);
-
-		// If it's a trader, make it interactive to open trade UI
-		if (type === "Trader") {
-			sprite.setInteractive({ useHandCursor: true });
-			sprite.on("pointerdown", () => {
-				this.openTradeUI(entity.id);
-			});
 		}
 
 		const label = this.add
-			.text(entity.position.x, entity.position.y - size - 10, labelText, {
+			.text(entity.position.x, entity.position.y - 30, labelText, {
 				fontSize: "10px",
 				color: labelColor,
 				fontFamily: "monospace",
 			})
 			.setOrigin(0.5)
-			.setDepth(10);
+			.setDepth(11);
 
 		let facingLine: Phaser.GameObjects.Graphics | undefined;
 		if (isMe) {
@@ -990,7 +989,15 @@ export class OverworldScene extends Phaser.Scene {
 			facingLine.moveTo(0, 0);
 			facingLine.lineTo(20, 0);
 			facingLine.strokePath();
-			facingLine.setDepth(11);
+			facingLine.setDepth(12);
+		}
+
+		// If it's a trader, make it interactive
+		if (type === "Trader") {
+			sprite.setInteractive({ useHandCursor: true });
+			sprite.on("pointerdown", () => {
+				this.openTradeUI(entity.id);
+			});
 		}
 
 		this.entities.set(entity.id, {
