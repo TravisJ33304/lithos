@@ -100,6 +100,7 @@ mod tests {
                     velocity: Vec2::ZERO,
                     zone: ZoneId::Overworld,
                     entity_type: crate::types::SnapshotEntityType::Player,
+                    subtype: None,
                 },
                 EntitySnapshot {
                     id: EntityId(2),
@@ -107,6 +108,7 @@ mod tests {
                     velocity: Vec2::new(1.0, -1.0),
                     zone: ZoneId::Overworld,
                     entity_type: crate::types::SnapshotEntityType::Hostile,
+                    subtype: Some("rover".to_string()),
                 },
             ],
         };

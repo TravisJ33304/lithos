@@ -33,6 +33,7 @@ fn compact_join_ack_state_move_shapes() {
             velocity: Vec2::ZERO,
             zone: ZoneId::Overworld,
             entity_type: SnapshotEntityType::Player,
+            subtype: None,
         }],
     };
     let v2 = decode_value(&codec::encode(&snap).unwrap());

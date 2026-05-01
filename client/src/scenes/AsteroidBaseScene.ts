@@ -5,10 +5,10 @@
  */
 
 import * as Phaser from "phaser";
+import { resolveSprite } from "../config/SpriteRegistry";
 import type { NetworkClient } from "../net/NetworkClient";
 import type { EntitySnapshot, ServerMessage } from "../types/protocol";
 import { gameUi } from "../ui/GameUiManager";
-import { resolveSprite } from "../config/SpriteRegistry";
 
 interface BaseData {
 	net: NetworkClient;
@@ -27,8 +27,6 @@ export class AsteroidBaseScene extends Phaser.Scene {
 	private myEntityId!: number;
 	private spaceKey!: Phaser.Input.Keyboard.Key;
 	private entities: Map<number, RenderedEntity> = new Map();
-	private oxygenText!: Phaser.GameObjects.Text;
-	private powerText!: Phaser.GameObjects.Text;
 
 	constructor() {
 		super({ key: "AsteroidBaseScene" });
@@ -41,46 +39,8 @@ export class AsteroidBaseScene extends Phaser.Scene {
 
 	create(): void {
 		gameUi.showGameplay();
+		gameUi.updateSceneContext("ASTEROID BASE", "[SPACE] Return to Overworld");
 		this.cameras.main.setBackgroundColor("#1a0a2e");
-
-		const { width, height } = this.cameras.main;
-
-		// Title.
-		this.add
-			.text(width / 2, 40, "ASTEROID BASE", {
-				fontSize: "24px",
-				color: "#7c3aed",
-				fontFamily: "monospace",
-			})
-			.setOrigin(0.5);
-
-		// Instructions.
-		this.add
-			.text(width / 2, height - 40, "[SPACE] Return to Overworld", {
-				fontSize: "14px",
-				color: "#666666",
-				fontFamily: "monospace",
-			})
-			.setOrigin(0.5);
-
-		// O₂ and Power status.
-		this.oxygenText = this.add
-			.text(20, 80, "O₂: --", {
-				fontSize: "14px",
-				color: "#58a6ff",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		this.powerText = this.add
-			.text(20, 100, "Power: --", {
-				fontSize: "14px",
-				color: "#f0a000",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
 
 		// --- Input ---
 		if (this.input.keyboard) {
@@ -102,11 +62,6 @@ export class AsteroidBaseScene extends Phaser.Scene {
 				}
 			} else if ("OxygenChanged" in msg) {
 				if (msg.OxygenChanged.entity_id === this.myEntityId) {
-					const color = msg.OxygenChanged.current < 30 ? "#ff4444" : "#58a6ff";
-					this.oxygenText.setText(
-						`O₂: ${Math.max(0, Math.floor(msg.OxygenChanged.current))}/${msg.OxygenChanged.max}`,
-					);
-					this.oxygenText.setColor(color);
 					gameUi.updateVitals({
 						health: "--",
 						oxygen: `${Math.max(0, Math.floor(msg.OxygenChanged.current))}/${msg.OxygenChanged.max}`,
@@ -170,7 +125,7 @@ export class AsteroidBaseScene extends Phaser.Scene {
 				structures += 1;
 			}
 		}
-		this.powerText.setText(`Structures: ${structures}`);
+		gameUi.updateBaseStatus(structures);
 	}
 
 	private spawnEntity(entity: EntitySnapshot): void {
@@ -208,11 +163,16 @@ export class AsteroidBaseScene extends Phaser.Scene {
 		sprite.setDepth(10);
 
 		const label = this.add
-			.text(entity.position.x, entity.position.y - 30, isMe ? "YOU" : `P${entity.id}`, {
-				fontSize: "10px",
-				color: isMe ? "#58a6ff" : "#aaaaaa",
-				fontFamily: "monospace",
-			})
+			.text(
+				entity.position.x,
+				entity.position.y - 30,
+				isMe ? "YOU" : `P${entity.id}`,
+				{
+					fontSize: "10px",
+					color: isMe ? "#58a6ff" : "#aaaaaa",
+					fontFamily: "monospace",
+				},
+			)
 			.setOrigin(0.5)
 			.setDepth(11);
 

@@ -39,6 +39,7 @@ fn compact_server_wire_matches_documented_hex() {
             velocity: Vec2::ZERO,
             zone: ZoneId::Overworld,
             entity_type: SnapshotEntityType::Player,
+            subtype: None,
         }],
     };
     assert_eq!(

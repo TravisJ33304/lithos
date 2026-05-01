@@ -67,7 +67,10 @@ export class ParticleManager {
 		emitter.explode();
 	}
 
-	createFireDot(x: number, y: number): Phaser.GameObjects.Particles.ParticleEmitter {
+	createFireDot(
+		x: number,
+		y: number,
+	): Phaser.GameObjects.Particles.ParticleEmitter {
 		const emitter = this.scene.add.particles(x, y, "fx_fire_dot", {
 			speed: { min: 5, max: 15 },
 			scale: { start: 0.5, end: 0 },

@@ -56,6 +56,7 @@ export interface EntitySnapshot {
 	velocity: Vec2;
 	zone: ZoneId;
 	entity_type: SnapshotEntityType;
+	subtype?: string;
 }
 
 export interface ProgressionSnapshot {

@@ -3,6 +3,8 @@
 **Date:** 2026-04-29
 **Build:** v0.7.0 (Phase 7 — World of Stone & Steel)
 
+> Note: This report is historical and predates the later GDD-alignment implementation pass. For current execution and verification steps, use `docs/playtesting.md`.
+
 ---
 
 ## 1. Executive Summary

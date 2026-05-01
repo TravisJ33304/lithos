@@ -145,6 +145,7 @@ function normalizeEntitySnapshot(e: unknown): EntitySnapshot {
 			velocity: normalizeVec2(e[2]),
 			zone: normalizeZoneId(e[3]),
 			entity_type: normalizeSnapshotEntityType(e[4]),
+			subtype: e.length >= 6 ? asString(e[5]) : undefined,
 		};
 	}
 	if (isRecord(e) && "id" in e) {

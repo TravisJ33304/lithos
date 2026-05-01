@@ -11,6 +11,7 @@ fn state_snapshot(entity_count: u64) -> ServerMessage {
             velocity: Vec2::new(1.0, -1.0),
             zone: ZoneId::Overworld,
             entity_type: SnapshotEntityType::Hostile,
+            subtype: None,
         })
         .collect();
     ServerMessage::StateSnapshot {

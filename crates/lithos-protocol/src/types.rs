@@ -369,11 +369,14 @@ pub struct PowerNetworkSnapshot {
 }
 
 /// Snapshot of a single entity's state, sent from server to clients.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntitySnapshot {
     pub id: EntityId,
     pub position: Vec2,
     pub velocity: Vec2,
     pub zone: ZoneId,
     pub entity_type: SnapshotEntityType,
+    /// Optional subtype for entities that have variants (e.g. resource nodes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtype: Option<String>,
 }

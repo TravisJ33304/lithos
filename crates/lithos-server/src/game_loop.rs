@@ -2132,10 +2132,10 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
         let Some(&eid) = entity_map.get(&ecs_entity) else {
             continue;
         };
-        let entity_type = if player.is_some() {
-            SnapshotEntityType::Player
+        let (entity_type, subtype) = if player.is_some() {
+            (SnapshotEntityType::Player, None)
         } else if let Some(npc) = npc {
-            match npc.npc_type {
+            let t = match npc.npc_type {
                 NpcType::Rover => SnapshotEntityType::Rover,
                 NpcType::Drone => SnapshotEntityType::Drone,
                 NpcType::AssaultWalker => SnapshotEntityType::AssaultWalker,
@@ -2143,15 +2143,25 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
                 NpcType::HeavyFlamethrower => SnapshotEntityType::HeavyFlamethrower,
                 NpcType::CoreWarden => SnapshotEntityType::CoreWarden,
                 NpcType::Trader => SnapshotEntityType::Trader,
-            }
-        } else if node.is_some() {
-            SnapshotEntityType::ResourceNode
+            };
+            (t, None)
+        } else if let Some(node) = node {
+            let sub = match node.resource_type {
+                ResourceType::Iron => Some("iron".to_string()),
+                ResourceType::Copper => Some("copper".to_string()),
+                ResourceType::Titanium => Some("titanium".to_string()),
+                ResourceType::Silica => Some("silica".to_string()),
+                ResourceType::Uranium => Some("uranium".to_string()),
+                ResourceType::Plutonium => Some("plutonium".to_string()),
+                ResourceType::BioMass => Some("biomass".to_string()),
+            };
+            (SnapshotEntityType::ResourceNode, sub)
         } else if item.is_some() {
-            SnapshotEntityType::Item
+            (SnapshotEntityType::Item, None)
         } else if proj.is_some() {
-            SnapshotEntityType::Projectile
+            (SnapshotEntityType::Projectile, None)
         } else {
-            SnapshotEntityType::Unknown
+            (SnapshotEntityType::Unknown, None)
         };
 
         entities.push(EntitySnapshot {
@@ -2160,6 +2170,7 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
             velocity: vel.0,
             zone: zone.0,
             entity_type,
+            subtype,
         });
     }
 
@@ -2189,7 +2200,7 @@ fn broadcast_snapshots(sim: &mut Simulation, connections: &ConnectionManager) {
             }
             let dist_sq = (entity.position - client_pos).length_squared();
             if dist_sq < 1500.0 * 1500.0 {
-                visible_entities.push(*entity);
+                visible_entities.push(entity.clone());
             }
         }
 

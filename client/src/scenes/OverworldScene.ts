@@ -6,7 +6,9 @@
 
 import * as Phaser from "phaser";
 import { createNoise2D } from "simplex-noise";
+import { resolveResourceSprite, resolveSprite } from "../config/SpriteRegistry";
 import type { NetworkClient } from "../net/NetworkClient";
+import { ParticleManager } from "../systems/ParticleManager";
 import type {
 	EntitySnapshot,
 	ServerMessage,
@@ -14,8 +16,6 @@ import type {
 	Vec2,
 } from "../types/protocol";
 import { gameUi } from "../ui/GameUiManager";
-import { resolveSprite } from "../config/SpriteRegistry";
-import { ParticleManager } from "../systems/ParticleManager";
 
 /** A single chunk of the tilemap received from the server. */
 interface TileChunk {
@@ -53,9 +53,6 @@ export class OverworldScene extends Phaser.Scene {
 	private chunkGraphicsPool: Phaser.GameObjects.Graphics[] = [];
 	private chunkSize = 32;
 	private tileSize = 40;
-	private healthText!: Phaser.GameObjects.Text;
-	private inventoryText!: Phaser.GameObjects.Text;
-	private crosshair!: Phaser.GameObjects.Graphics;
 	private inventoryItems: string[] = [];
 	private currentHealth: number = 100;
 	private maxHealth: number = 100;
@@ -69,51 +66,28 @@ export class OverworldScene extends Phaser.Scene {
 	};
 	private spaceKey!: Phaser.Input.Keyboard.Key;
 	private inputSeq = 0;
-	private fpsText!: Phaser.GameObjects.Text;
-	private tickText!: Phaser.GameObjects.Text;
+	private latestTick = 0;
 	private lastDirection: Vec2 = { x: 0, y: 0 };
 	private noise2D!: (x: number, y: number) => number;
 	private worldSeed: number = 12345;
-	private minimap!: Phaser.Cameras.Scene2D.Camera;
 	private craftKey!: Phaser.Input.Keyboard.Key;
-	private craftPanelVisible = false;
-	private craftPanelElements: Phaser.GameObjects.GameObject[] = [];
 
 	private buildKey!: Phaser.Input.Keyboard.Key;
 	private buildMode = false;
 	private buildGhost!: Phaser.GameObjects.Rectangle;
 	private selectedStructure = "wall_segment";
 
-	// Hotbar state
-	private hotbarSlot = 0; // 0 = unarmed/fire, 1-9 = inventory items
-	private hotbarElements: Phaser.GameObjects.GameObject[] = [];
-	private xpText!: Phaser.GameObjects.Text;
-	private xpFlashText!: Phaser.GameObjects.Text;
-	private craftDeniedText!: Phaser.GameObjects.Text;
+	private hotbarSlot = 0;
 
-	// Economy state
 	private traderQuotes: import("../types/protocol").TraderQuote[] = [];
 	private factionCredits = 0;
-	private creditsText!: Phaser.GameObjects.Text;
-	private tradeFailedText!: Phaser.GameObjects.Text;
 
-	// Life support state
 	private currentOxygen = 100;
 	private maxOxygen = 100;
-	private oxygenText!: Phaser.GameObjects.Text;
 
-	// Weapon state
 	private currentAmmo = 0;
 	private maxAmmo = 0;
-	private ammoText!: Phaser.GameObjects.Text;
 	private particles!: ParticleManager;
-
-	// Chat state
-	private chatMessages: Array<{ from: string; text: string; color: string }> =
-		[];
-	private chatVisible = false;
-	private chatElements: Phaser.GameObjects.GameObject[] = [];
-	private chatInput = "";
 
 	constructor() {
 		super({ key: "OverworldScene" });
@@ -137,11 +111,23 @@ export class OverworldScene extends Phaser.Scene {
 
 	create(): void {
 		gameUi.showGameplay();
+		gameUi.updateSceneContext(
+			"OVERWORLD",
+			"WASD move | Left click fire/mine | Right click interact",
+		);
+		gameUi.setBuildMode(false);
 		gameUi.showOnboarding(true);
 		this.time.delayedCall(12000, () => gameUi.showOnboarding(false));
 		gameUi.showDeathOverlay(false);
 		gameUi.onChatSubmit((text) => {
 			this.net.send({ Chat: { channel: "Global", text } });
+		});
+		gameUi.onCraftRequested((recipe) => {
+			this.net.send({ Craft: { recipe } });
+		});
+		gameUi.onTradeRequested({
+			buy: (item, quantity) => this.net.send({ BuyItem: { item, quantity } }),
+			sell: (item, quantity) => this.net.send({ SellItem: { item, quantity } }),
 		});
 		// --- World background ---
 		this.cameras.main.setBackgroundColor("#0d1117");
@@ -188,53 +174,6 @@ export class OverworldScene extends Phaser.Scene {
 			);
 		}
 
-		// --- Minimap ---
-		const cw = this.cameras.main.width;
-		this.minimap = this.cameras
-			.add(cw - 160, 10, 150, 150)
-			.setZoom(0.05)
-			.setName("minimap");
-		this.minimap.setBackgroundColor(0x000000);
-
-		// --- HUD ---
-		this.fpsText = this.add
-			.text(10, 10, "FPS: 0", {
-				fontSize: "14px",
-				color: "#30a14e",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		this.tickText = this.add
-			.text(10, 28, "Tick: 0", {
-				fontSize: "14px",
-				color: "#30a14e",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		// Zone transfer instruction.
-		this.add
-			.text(10, 46, "[SPACE] Warp to Asteroid Base | [CLICK] Shoot", {
-				fontSize: "12px",
-				color: "#666666",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		// Crafting instructions
-		this.add
-			.text(10, 82, "[C] Crafting Panel\n[B] Toggle Build Mode", {
-				fontSize: "12px",
-				color: "#666666",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
 		// C key for crafting, B for building
 		if (this.input.keyboard) {
 			this.craftKey = this.input.keyboard.addKey(
@@ -263,136 +202,7 @@ export class OverworldScene extends Phaser.Scene {
 					this.hotbarSlot = 0;
 					this.updateHotbarUI();
 				});
-
-			// Chat typing input.
-			this.input.keyboard.on("keydown", (event: KeyboardEvent) => {
-				if (!this.chatVisible) return;
-				if (event.key === "Enter") return; // handled by toggleChat
-				if (event.key === "Backspace") {
-					this.chatInput = this.chatInput.slice(0, -1);
-				} else if (event.key.length === 1 && this.chatInput.length < 100) {
-					this.chatInput += event.key;
-				}
-				this.renderChatUI();
-			});
 		}
-
-		// XP text
-		this.xpText = this.add
-			.text(10, 100, "XP: --", {
-				fontSize: "12px",
-				color: "#30a14e",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		this.xpFlashText = this.add
-			.text(
-				this.cameras.main.width / 2,
-				this.cameras.main.height / 2 - 50,
-				"",
-				{
-					fontSize: "16px",
-					color: "#2ea043",
-					fontFamily: "monospace",
-					fontStyle: "bold",
-				},
-			)
-			.setScrollFactor(0)
-			.setDepth(200)
-			.setOrigin(0.5);
-
-		this.craftDeniedText = this.add
-			.text(
-				this.cameras.main.width / 2,
-				this.cameras.main.height / 2 + 50,
-				"",
-				{
-					fontSize: "14px",
-					color: "#ff4444",
-					fontFamily: "monospace",
-					fontStyle: "bold",
-				},
-			)
-			.setScrollFactor(0)
-			.setDepth(200)
-			.setOrigin(0.5);
-
-		this.creditsText = this.add
-			.text(10, 116, "Credits: 0", {
-				fontSize: "12px",
-				color: "#f0a000",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		this.tradeFailedText = this.add
-			.text(
-				this.cameras.main.width / 2,
-				this.cameras.main.height / 2 + 80,
-				"",
-				{
-					fontSize: "14px",
-					color: "#ff4444",
-					fontFamily: "monospace",
-					fontStyle: "bold",
-				},
-			)
-			.setScrollFactor(0)
-			.setDepth(200)
-			.setOrigin(0.5);
-
-		this.oxygenText = this.add
-			.text(10, 132, "O₂: 100/100", {
-				fontSize: "12px",
-				color: "#58a6ff",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		this.ammoText = this.add
-			.text(10, 148, "Ammo: --", {
-				fontSize: "12px",
-				color: "#ffaa00",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
-		this.inventoryText = this.add
-			.text(
-				this.cameras.main.width / 2,
-				this.cameras.main.height - 30,
-				"Inventory: []",
-				{
-					fontSize: "14px",
-					color: "#ffffff",
-					backgroundColor: "#00000088",
-					padding: { x: 10, y: 5 },
-					fontFamily: "monospace",
-				},
-			)
-			.setScrollFactor(0)
-			.setDepth(100)
-			.setOrigin(0.5);
-
-		// Crosshair
-		this.crosshair = this.add.graphics();
-		this.crosshair.lineStyle(2, 0xff0000, 0.8);
-		this.crosshair.strokeCircle(0, 0, 8);
-		this.crosshair.moveTo(-12, 0);
-		this.crosshair.lineTo(-4, 0);
-		this.crosshair.moveTo(12, 0);
-		this.crosshair.lineTo(4, 0);
-		this.crosshair.moveTo(0, -12);
-		this.crosshair.lineTo(0, -4);
-		this.crosshair.moveTo(0, 12);
-		this.crosshair.lineTo(0, 4);
-		this.crosshair.strokePath();
-		this.crosshair.setDepth(200);
 
 		// Build ghost (40x40 grid)
 		this.buildGhost = this.add.rectangle(0, 0, 40, 40, 0x58a6ff, 0.4);
@@ -400,19 +210,9 @@ export class OverworldScene extends Phaser.Scene {
 		this.buildGhost.setDepth(199);
 		this.buildGhost.setVisible(false);
 
-		this.healthText = this.add
-			.text(10, 64, "Health: 100/100", {
-				fontSize: "16px",
-				color: "#ff3333",
-				fontFamily: "monospace",
-				fontStyle: "bold",
-			})
-			.setScrollFactor(0)
-			.setDepth(100);
-
 		// --- Input processing ---
 		this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-			if (this.isDead || this.craftPanelVisible) return;
+			if (this.isDead || gameUi.isCraftingPanelOpen()) return;
 			// Convert screen coordinates to world coordinates
 			const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
 
@@ -475,7 +275,11 @@ export class OverworldScene extends Phaser.Scene {
 				const dx = worldPoint.x - myEntity.sprite.x;
 				const dy = worldPoint.y - myEntity.sprite.y;
 				const angle = Math.atan2(dy, dx);
-				this.particles.createMuzzleFlash(myEntity.sprite.x, myEntity.sprite.y, angle);
+				this.particles.createMuzzleFlash(
+					myEntity.sprite.x,
+					myEntity.sprite.y,
+					angle,
+				);
 				this.net.send({
 					Fire: {
 						direction: { x: dx, y: dy },
@@ -504,19 +308,11 @@ export class OverworldScene extends Phaser.Scene {
 				if (msg.HealthChanged.entity_id === this.myEntityId) {
 					this.currentHealth = msg.HealthChanged.health;
 					this.maxHealth = msg.HealthChanged.max_health;
-					this.healthText.setText(
-						`Health: ${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
-					);
 				}
 			} else if ("OxygenChanged" in msg) {
 				if (msg.OxygenChanged.entity_id === this.myEntityId) {
 					this.currentOxygen = msg.OxygenChanged.current;
 					this.maxOxygen = msg.OxygenChanged.max;
-					const color = this.currentOxygen < 30 ? "#ff4444" : "#58a6ff";
-					this.oxygenText.setText(
-						`O₂: ${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
-					);
-					this.oxygenText.setColor(color);
 				}
 			} else if ("PlayerDied" in msg) {
 				const diedEnt = this.entities.get(msg.PlayerDied.entity_id);
@@ -526,12 +322,8 @@ export class OverworldScene extends Phaser.Scene {
 				if (msg.PlayerDied.entity_id === this.myEntityId) {
 					this.isDead = true;
 					gameUi.showDeathOverlay(true);
-					this.healthText.setText(
-						"DEAD - Inventory Dropped!\nPress R to Respawn",
-					);
-					this.healthText.setColor("#ff0000");
 					this.inventoryItems = [];
-					this.inventoryText.setText("Inventory: []");
+					gameUi.updateInventory(null, this.inventoryItems);
 					this.updateHotbarUI();
 				}
 				// Remove the dead entity sprite
@@ -546,9 +338,6 @@ export class OverworldScene extends Phaser.Scene {
 				if (msg.InventoryUpdated.entity_id === this.myEntityId) {
 					try {
 						this.inventoryItems = JSON.parse(msg.InventoryUpdated.items_json);
-						this.inventoryText.setText(
-							`Inventory: [${this.inventoryItems.join(", ")}]`,
-						);
 						gameUi.updateInventory(null, this.inventoryItems);
 						this.updateHotbarUI();
 					} catch (e) {
@@ -569,62 +358,36 @@ export class OverworldScene extends Phaser.Scene {
 				}
 			} else if ("XpGained" in msg) {
 				if (msg.XpGained.branch === "Extraction") {
-					this.xpText.setText(
-						`Extraction Lv.${msg.XpGained.new_level} (${msg.XpGained.new_total} XP)`,
-					);
-					this.flashText(
-						this.xpFlashText,
-						`+${msg.XpGained.amount} Extraction XP`,
-						3000,
-					);
+					gameUi.pushFlash(`+${msg.XpGained.amount} Extraction XP`, "xp");
 				}
 			} else if ("CraftDenied" in msg) {
-				this.flashText(
-					this.craftDeniedText,
-					`Craft denied: ${msg.CraftDenied.reason}`,
-					2000,
-				);
+				gameUi.pushFlash(`Craft denied: ${msg.CraftDenied.reason}`, "error");
 			} else if ("TraderQuotes" in msg) {
 				this.traderQuotes = msg.TraderQuotes.quotes;
 				gameUi.updateTraderQuotes(this.traderQuotes);
 			} else if ("CreditsChanged" in msg) {
 				this.factionCredits = msg.CreditsChanged.balance;
-				this.creditsText.setText(
-					`Credits: ${this.factionCredits.toLocaleString()}`,
-				);
 				gameUi.updateVitals({
 					health: `${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
 					oxygen: `${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
 					ammo: `${this.currentAmmo}/${this.maxAmmo}`,
 					credits: this.factionCredits.toLocaleString(),
 					fps: `${Math.round(this.game.loop.actualFps)}`,
-					tick: this.tickText.text.replace("Tick: ", ""),
+					tick: `${this.latestTick}`,
 				});
 			} else if ("TradeFailed" in msg) {
-				this.flashText(
-					this.tradeFailedText,
-					`Trade failed: ${msg.TradeFailed.reason}`,
-					2000,
-				);
+				gameUi.pushFlash(`Trade failed: ${msg.TradeFailed.reason}`, "error");
 			} else if ("AmmoChanged" in msg) {
 				if (msg.AmmoChanged.entity_id === this.myEntityId) {
 					this.currentAmmo = msg.AmmoChanged.ammo;
 					this.maxAmmo = msg.AmmoChanged.max_ammo;
-					this.ammoText.setText(`Ammo: ${this.currentAmmo}/${this.maxAmmo}`);
-					if (this.currentAmmo === 0) {
-						this.ammoText.setColor("#ff4444");
-					} else {
-						this.ammoText.setColor("#ffaa00");
-					}
 				}
 			} else if ("ChatMessage" in msg) {
-				const channel = msg.ChatMessage.channel;
-				const color = channel === "Faction" ? "#2ea043" : "#8b949e";
 				const from =
 					msg.ChatMessage.from_entity_id === 0
 						? "SYSTEM"
 						: `E${msg.ChatMessage.from_entity_id}`;
-				this.addChatMessage(from, msg.ChatMessage.text, color);
+				this.addChatMessage(from, msg.ChatMessage.text);
 			} else if ("ProgressionUpdated" in msg) {
 				if (msg.ProgressionUpdated.entity_id === this.myEntityId) {
 					gameUi.updateProgression(msg.ProgressionUpdated.branches);
@@ -683,7 +446,6 @@ export class OverworldScene extends Phaser.Scene {
 				this.net.send("Respawn");
 				this.isDead = false;
 				gameUi.showDeathOverlay(false);
-				this.healthText.setColor("#ff3333");
 			}
 			return; // don't process movement if dead
 		}
@@ -723,14 +485,14 @@ export class OverworldScene extends Phaser.Scene {
 
 		// Crafting panel toggle on C.
 		if (this.craftKey && Phaser.Input.Keyboard.JustDown(this.craftKey)) {
-			this.toggleCraftPanel();
+			gameUi.toggleCraftingPanel();
 		}
 
 		// Build mode toggle on B.
 		if (this.buildKey && Phaser.Input.Keyboard.JustDown(this.buildKey)) {
 			this.buildMode = !this.buildMode;
 			this.buildGhost.setVisible(this.buildMode);
-			this.crosshair.setVisible(!this.buildMode);
+			gameUi.setBuildMode(this.buildMode);
 		}
 
 		// Chat toggle on Enter.
@@ -740,7 +502,7 @@ export class OverworldScene extends Phaser.Scene {
 				this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER),
 			)
 		) {
-			this.toggleChat();
+			gameUi.focusChat();
 		}
 
 		// --- Interpolation & Updates ---
@@ -752,8 +514,6 @@ export class OverworldScene extends Phaser.Scene {
 			const gridX = Math.round(worldPoint.x / 40.0);
 			const gridY = Math.round(worldPoint.y / 40.0);
 			this.buildGhost.setPosition(gridX * 40, gridY * 40);
-		} else {
-			this.crosshair.setPosition(worldPoint.x, worldPoint.y);
 		}
 
 		for (const [id, ent] of this.entities) {
@@ -795,15 +555,13 @@ export class OverworldScene extends Phaser.Scene {
 			me.facingLine.setRotation(angle);
 		}
 
-		// --- HUD ---
-		this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`);
 		gameUi.updateVitals({
 			health: `${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
 			oxygen: `${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
 			ammo: `${this.currentAmmo}/${this.maxAmmo}`,
 			credits: this.factionCredits.toLocaleString(),
 			fps: `${Math.round(this.game.loop.actualFps)}`,
-			tick: this.tickText.text.replace("Tick: ", ""),
+			tick: `${this.latestTick}`,
 		});
 	}
 
@@ -881,7 +639,7 @@ export class OverworldScene extends Phaser.Scene {
 		last_processed_seq: number;
 		entities: EntitySnapshot[];
 	}): void {
-		this.tickText.setText(`Tick: ${snapshot.tick}`);
+		this.latestTick = snapshot.tick;
 
 		const seenIds = new Set<number>();
 
@@ -911,15 +669,18 @@ export class OverworldScene extends Phaser.Scene {
 		const me = this.entities.get(this.myEntityId);
 		if (me) {
 			this.cameras.main.centerOn(me.sprite.x, me.sprite.y);
-			this.minimap.centerOn(me.sprite.x, me.sprite.y);
 		}
+		gameUi.updateMinimap(snapshot.entities, this.myEntityId);
 	}
 
 	private spawnEntity(entity: EntitySnapshot): void {
 		const isMe = entity.id === this.myEntityId;
 		const type = entity.entity_type;
 
-		const spriteDef = resolveSprite(type);
+		let spriteDef = resolveSprite(type);
+		if (type === "ResourceNode" && entity.subtype) {
+			spriteDef = resolveResourceSprite(entity.subtype);
+		}
 		let sprite: Phaser.GameObjects.Sprite;
 
 		if (type === "Unknown") {
@@ -1019,225 +780,14 @@ export class OverworldScene extends Phaser.Scene {
 		});
 	}
 
-	private toggleChat(): void {
-		if (this.chatVisible) {
-			// Send message if there's text.
-			if (this.chatInput.trim().length > 0) {
-				this.net.send({
-					Chat: { channel: "Global", text: this.chatInput.trim() },
-				});
-			}
-			this.chatInput = "";
-			this.chatVisible = false;
-			for (const el of this.chatElements) {
-				el.destroy();
-			}
-			this.chatElements = [];
-		} else {
-			this.chatVisible = true;
-			this.renderChatUI();
-		}
-	}
-
-	private addChatMessage(from: string, text: string, color: string): void {
-		this.chatMessages.push({ from, text, color });
-		if (this.chatMessages.length > 50) {
-			this.chatMessages.shift();
-		}
+	private addChatMessage(from: string, text: string): void {
 		gameUi.pushChat(`[${from}] ${text}`);
-		if (this.chatVisible) {
-			this.renderChatUI();
-		}
-	}
-
-	private renderChatUI(): void {
-		for (const el of this.chatElements) {
-			el.destroy();
-		}
-		this.chatElements = [];
-
-		const cx = 20;
-		const cy = this.cameras.main.height - 200;
-		const panelW = 400;
-		const panelH = 160;
-
-		const bg = this.add.rectangle(
-			cx + panelW / 2,
-			cy + panelH / 2,
-			panelW,
-			panelH,
-			0x000000,
-			0.85,
-		);
-		bg.setStrokeStyle(1, 0x333333);
-		bg.setScrollFactor(0);
-		bg.setDepth(200);
-		this.chatElements.push(bg);
-
-		let yOff = cy + panelH - 10;
-		const recent = this.chatMessages.slice(-6);
-		for (let i = recent.length - 1; i >= 0; i--) {
-			const msg = recent[i];
-			const line = this.add
-				.text(cx + 10, yOff, `[${msg.from}] ${msg.text}`, {
-					fontSize: "11px",
-					color: msg.color,
-					fontFamily: "monospace",
-					wordWrap: { width: panelW - 20 },
-				})
-				.setScrollFactor(0)
-				.setDepth(201);
-			this.chatElements.push(line);
-			yOff -= 18;
-		}
-
-		const inputLine = this.add
-			.text(cx + 10, cy + panelH + 5, `> ${this.chatInput}_`, {
-				fontSize: "12px",
-				color: "#ffffff",
-				fontFamily: "monospace",
-			})
-			.setScrollFactor(0)
-			.setDepth(201);
-		this.chatElements.push(inputLine);
-	}
-
-	private tradeUIElements: Phaser.GameObjects.GameObject[] = [];
-
-	private closeTradeUI(): void {
-		for (const el of this.tradeUIElements) {
-			el.destroy();
-		}
-		this.tradeUIElements = [];
 	}
 
 	private openTradeUI(traderId: number): void {
 		if (this.isDead) return;
-		this.closeTradeUI();
-
-		// Request fresh quotes when opening trade UI.
 		this.net.send("RequestTraderQuotes");
-
-		const cx = this.cameras.main.width / 2;
-		const cy = this.cameras.main.height / 2;
-		const panelW = 360;
-		const panelH = 420;
-
-		const uiBg = this.add.rectangle(cx, cy, panelW, panelH, 0x000000, 0.92);
-		uiBg.setStrokeStyle(2, 0x2ea043);
-		uiBg.setScrollFactor(0);
-		uiBg.setDepth(300);
-		this.tradeUIElements.push(uiBg);
-
-		const title = this.add
-			.text(cx, cy - panelH / 2 + 20, `TRADER E${traderId}`, {
-				fontSize: "16px",
-				color: "#2ea043",
-				fontFamily: "monospace",
-				fontStyle: "bold",
-			})
-			.setOrigin(0.5)
-			.setScrollFactor(0)
-			.setDepth(301);
-		this.tradeUIElements.push(title);
-
-		const creditsLabel = this.add
-			.text(
-				cx,
-				cy - panelH / 2 + 42,
-				`Faction: ${this.factionCredits.toLocaleString()} CR`,
-				{
-					fontSize: "11px",
-					color: "#f0a000",
-					fontFamily: "monospace",
-				},
-			)
-			.setOrigin(0.5)
-			.setScrollFactor(0)
-			.setDepth(301);
-		this.tradeUIElements.push(creditsLabel);
-
-		// Filter quotes for this trader.
-		const quotes = this.traderQuotes.filter(
-			(q) => q.trader_entity_id === traderId,
-		);
-
-		let yOff = cy - panelH / 2 + 70;
-		for (const q of quotes) {
-			const itemLabel = this.add
-				.text(cx - panelW / 2 + 20, yOff, q.item.toUpperCase(), {
-					fontSize: "12px",
-					color: "#ffffff",
-					fontFamily: "monospace",
-				})
-				.setScrollFactor(0)
-				.setDepth(301);
-			this.tradeUIElements.push(itemLabel);
-
-			const buyLabel = this.add
-				.text(cx - 30, yOff, `BUY ${Math.floor(q.sell_price)}`, {
-					fontSize: "11px",
-					color: "#58a6ff",
-					fontFamily: "monospace",
-					backgroundColor: "#1a2332",
-					padding: { x: 6, y: 2 },
-				})
-				.setOrigin(0.5)
-				.setScrollFactor(0)
-				.setDepth(301)
-				.setInteractive({ useHandCursor: true });
-			this.tradeUIElements.push(buyLabel);
-
-			buyLabel.on("pointerover", () => buyLabel.setColor("#ffffff"));
-			buyLabel.on("pointerout", () => buyLabel.setColor("#58a6ff"));
-			buyLabel.on("pointerdown", () => {
-				this.net.send({
-					BuyItem: { item: q.item, quantity: 1 },
-				});
-				buyLabel.setColor("#2ea043");
-				this.time.delayedCall(200, () => buyLabel.setColor("#58a6ff"));
-			});
-
-			const sellLabel = this.add
-				.text(cx + 70, yOff, `SELL ${Math.floor(q.buy_price)}`, {
-					fontSize: "11px",
-					color: "#2ea043",
-					fontFamily: "monospace",
-					backgroundColor: "#1a2332",
-					padding: { x: 6, y: 2 },
-				})
-				.setOrigin(0.5)
-				.setScrollFactor(0)
-				.setDepth(301)
-				.setInteractive({ useHandCursor: true });
-			this.tradeUIElements.push(sellLabel);
-
-			sellLabel.on("pointerover", () => sellLabel.setColor("#ffffff"));
-			sellLabel.on("pointerout", () => sellLabel.setColor("#2ea043"));
-			sellLabel.on("pointerdown", () => {
-				this.net.send({
-					SellItem: { item: q.item, quantity: 1 },
-				});
-				sellLabel.setColor("#58a6ff");
-				this.time.delayedCall(200, () => sellLabel.setColor("#2ea043"));
-			});
-
-			yOff += 28;
-		}
-
-		const closeBtn = this.add
-			.text(cx, cy + panelH / 2 - 25, "[ CLOSE ]", {
-				fontSize: "13px",
-				color: "#ff4444",
-				fontFamily: "monospace",
-			})
-			.setOrigin(0.5)
-			.setScrollFactor(0)
-			.setDepth(301)
-			.setInteractive({ useHandCursor: true });
-		this.tradeUIElements.push(closeBtn);
-
-		closeBtn.on("pointerdown", () => this.closeTradeUI());
+		gameUi.openTraderPanel(traderId, this.traderQuotes, this.factionCredits);
 	}
 
 	private getSelectedHotbarItem(): string | null {
@@ -1246,193 +796,13 @@ export class OverworldScene extends Phaser.Scene {
 	}
 
 	private updateHotbarUI(): void {
-		// Clear old hotbar elements
-		for (const el of this.hotbarElements) {
-			el.destroy();
-		}
-		this.hotbarElements = [];
-
-		const slotSize = 40;
-		const spacing = 4;
-		const totalWidth = 9 * (slotSize + spacing);
-		const startX = (this.cameras.main.width - totalWidth) / 2 + slotSize / 2;
-		const y = this.cameras.main.height - 70;
-
-		for (let i = 0; i <= 9; i++) {
-			const x = startX + i * (slotSize + spacing);
-			const isSelected = this.hotbarSlot === i;
-			const bg = this.add.rectangle(x, y, slotSize, slotSize, 0x000000, 0.85);
-			bg.setStrokeStyle(isSelected ? 3 : 1, isSelected ? 0x58a6ff : 0x333333);
-			bg.setScrollFactor(0);
-			bg.setDepth(100);
-			this.hotbarElements.push(bg);
-
-			let labelText = i === 0 ? "🔫" : `${i}`;
-			if (i > 0 && i <= this.inventoryItems.length) {
-				const item = this.inventoryItems[i - 1];
-				// Show first 2 chars of item name as abbreviation
-				labelText = item.slice(0, 2).toUpperCase();
-			}
-
-			const label = this.add
-				.text(x, y, labelText, {
-					fontSize: "11px",
-					color: isSelected ? "#58a6ff" : "#888888",
-					fontFamily: "monospace",
-				})
-				.setOrigin(0.5)
-				.setScrollFactor(0)
-				.setDepth(101);
-			this.hotbarElements.push(label);
-		}
-	}
-
-	private flashText(
-		textObj: Phaser.GameObjects.Text,
-		message: string,
-		durationMs: number,
-	): void {
-		textObj.setText(message);
-		textObj.setAlpha(1);
-		this.tweens.killTweensOf(textObj);
-		this.tweens.add({
-			targets: textObj,
-			alpha: 0,
-			duration: durationMs,
-			ease: "Power2",
-		});
-	}
-
-	private toggleCraftPanel(): void {
-		if (this.craftPanelVisible) {
-			// Close the panel
-			for (const el of this.craftPanelElements) {
-				el.destroy();
-			}
-			this.craftPanelElements = [];
-			this.craftPanelVisible = false;
-			return;
-		}
-
-		this.craftPanelVisible = true;
-		const cx = this.cameras.main.width - 180;
-		const cy = 180;
-		const panelW = 320;
-		const panelH = 400;
-
-		const bg = this.add.rectangle(
-			cx,
-			cy + panelH / 2 - 10,
-			panelW,
-			panelH,
-			0x000000,
-			0.92,
+		gameUi.updateHotbar(
+			this.hotbarSlot,
+			this.inventoryItems.map((item) => ({
+				label: item,
+				quantity: 1,
+				title: item,
+			})),
 		);
-		bg.setStrokeStyle(2, 0x58a6ff);
-		bg.setScrollFactor(0);
-		bg.setDepth(300);
-		this.craftPanelElements.push(bg);
-
-		const title = this.add
-			.text(cx, cy - 10, "⚙ FABRICATOR", {
-				fontSize: "16px",
-				color: "#58a6ff",
-				fontFamily: "monospace",
-				fontStyle: "bold",
-			})
-			.setOrigin(0.5)
-			.setScrollFactor(0)
-			.setDepth(301);
-		this.craftPanelElements.push(title);
-
-		// Recipe definitions (must match server-side RECIPES)
-		const recipes = [
-			{ name: "iron_plate", inputs: "2× iron", output: "iron_plate" },
-			{ name: "copper_wire", inputs: "2× copper", output: "copper_wire" },
-			{
-				name: "circuit",
-				inputs: "copper_wire + iron_plate",
-				output: "circuit",
-			},
-			{ name: "glass", inputs: "2× silica", output: "glass" },
-			{ name: "medkit", inputs: "biomass + glass", output: "medkit" },
-			{ name: "bio_fuel", inputs: "2× biomass", output: "bio_fuel" },
-			{
-				name: "titanium_plate",
-				inputs: "2× titanium",
-				output: "titanium_plate",
-			},
-			{
-				name: "battery",
-				inputs: "titanium_plate + circuit",
-				output: "battery",
-			},
-			{
-				name: "shield_module",
-				inputs: "titanium_plate + battery + circuit",
-				output: "shield_module",
-			},
-			{ name: "wall_segment", inputs: "2× iron_plate", output: "wall_segment" },
-			{ name: "door", inputs: "iron_plate + circuit", output: "door" },
-			{
-				name: "generator",
-				inputs: "battery + titanium_plate + circuit",
-				output: "generator",
-			},
-			{
-				name: "workbench",
-				inputs: "2× iron_plate + circuit",
-				output: "workbench",
-			},
-		];
-
-		let yOff = cy + 20;
-		for (const r of recipes) {
-			const btn = this.add
-				.text(cx, yOff, `▸ ${r.output}`, {
-					fontSize: "13px",
-					color: "#8b949e",
-					fontFamily: "monospace",
-				})
-				.setOrigin(0.5)
-				.setScrollFactor(0)
-				.setDepth(301)
-				.setInteractive({ useHandCursor: true });
-
-			const detail = this.add
-				.text(cx, yOff + 14, `  ${r.inputs}`, {
-					fontSize: "10px",
-					color: "#555555",
-					fontFamily: "monospace",
-				})
-				.setOrigin(0.5)
-				.setScrollFactor(0)
-				.setDepth(301);
-
-			btn.on("pointerover", () => btn.setColor("#58a6ff"));
-			btn.on("pointerout", () => btn.setColor("#8b949e"));
-			btn.on("pointerdown", () => {
-				this.net.send({ Craft: { recipe: r.name } });
-				btn.setColor("#2ea043");
-				this.time.delayedCall(300, () => btn.setColor("#8b949e"));
-			});
-
-			this.craftPanelElements.push(btn, detail);
-			yOff += 34;
-		}
-
-		// Close button
-		const closeBtn = this.add
-			.text(cx, yOff + 10, "[ CLOSE ]", {
-				fontSize: "13px",
-				color: "#ff4444",
-				fontFamily: "monospace",
-			})
-			.setOrigin(0.5)
-			.setScrollFactor(0)
-			.setDepth(301)
-			.setInteractive({ useHandCursor: true });
-		closeBtn.on("pointerdown", () => this.toggleCraftPanel());
-		this.craftPanelElements.push(closeBtn);
 	}
 }
