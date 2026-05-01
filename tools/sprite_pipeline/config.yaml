@@ -1,0 +1,126 @@
+# tools/sprite_pipeline/config.yaml
+api:
+  host: "http://127.0.0.1:13305"
+  endpoint: "/api/v1/images/generations"
+  model: "Qwen-Image-2512-GGUF"
+  defaults:
+    width: 512
+    height: 512
+    steps: 20
+    cfg_scale: 2.5
+
+style_prefix: >
+  Top-down 2D sprite for a sci-fi survival video game.
+  Crisp vector-art style: flat colors, bold black outlines,
+  minimal shading, clean geometric shapes, transparent background,
+  isolated subject centered in frame. No text, no UI elements,
+  no background.
+
+output_dir: "../../client/public/sprites"
+
+sprites:
+  entities:
+    - key: player
+      size: 64
+      prompt: "Astronaut in white spacesuit, top-down view, helmet visor"
+    - key: rover
+      size: 64
+      prompt: "Small aggressive red wheeled combat drone, circular body, antenna"
+    - key: drone
+      size: 64
+      prompt: "Flying yellow mechanical drone, rotor disc, top-down view"
+    - key: assault_walker
+      size: 64
+      prompt: "Stocky orange humanoid combat mech, shotgun frame, aggressive stance"
+    - key: sniper_walker
+      size: 64
+      prompt: "Tall slim cyan humanoid mech, long railgun barrel, scope"
+    - key: heavy_flamethrower
+      size: 64
+      prompt: "Bulky dark red armored mech, fuel tanks, heavy flamethrower, helmet"
+    - key: siege_unit
+      size: 64
+      prompt: "Large gray tank mech, heavy treads, artillery cannon, armored hull"
+    - key: core_warden
+      size: 128
+      prompt: "Massive dark boss mech, multiple weapon arms, glowing red core, intimidating"
+    - key: trader
+      size: 64
+      prompt: "Humanoid scrapper merchant, green outfit, backpack, neutral stance"
+    - key: item_drop
+      size: 32
+      prompt: "Small glowing sci-fi crate, debris, loot container"
+
+  resources:
+    - key: node_iron
+      size: 64
+      prompt: "Gray metallic rocky outcropping, iron ore shards, top-down"
+    - key: node_copper
+      size: 64
+      prompt: "Orange-brown oxidized rock cluster, copper ore, top-down"
+    - key: node_silica
+      size: 64
+      prompt: "Pale glassy crystal cluster, silica deposit, translucent"
+    - key: node_uranium
+      size: 64
+      prompt: "Black rock with bright green glowing radioactive veins, hazard"
+    - key: node_plutonium
+      size: 64
+      prompt: "Dark rock with purple-blue glowing radioactive veins, hazard"
+    - key: node_biomass
+      size: 64
+      prompt: "Organic green fungi and tubers, bioluminescent spots, alien flora"
+
+  structures:
+    - key: wall_segment
+      size: 64
+      prompt: "Gray metal wall panel, rivets, seams, industrial"
+    - key: door
+      size: 64
+      prompt: "Sci-fi sliding door panel, frame, indicator light"
+    - key: generator
+      size: 64
+      prompt: "Boxy power generator, glowing green core, cables, vents"
+    - key: workbench
+      size: 64
+      prompt: "Sci-fi crafting workbench, tools, holographic screen, cluttered"
+
+  projectiles:
+    - key: projectile_bullet
+      size: 16
+      prompt: "Small orange plasma energy bolt, bullet, glowing"
+    - key: projectile_artillery
+      size: 32
+      prompt: "Large artillery shell with fire trail, explosive round"
+    - key: projectile_laser
+      size: [32, 8]
+      prompt: "Cyan laser beam segment, energy bolt, straight line"
+    - key: mining_laser_beam
+      size: [32, 8]
+      prompt: "Yellow-green mining laser beam segment, energy line"
+
+  particles:
+    - key: fx_muzzle_flash
+      size: 32
+      prompt: "Starburst muzzle flash, yellow white explosion, gunfire"
+    - key: fx_explosion
+      size: 64
+      prompt: "Expanding fireball explosion, orange red, smoke"
+    - key: fx_spark
+      size: 8
+      prompt: "Tiny bright white-yellow spark dot, particle"
+    - key: fx_fire_dot
+      size: 16
+      prompt: "Small orange flame lick, fire particle"
+    - key: fx_smoke_puff
+      size: 32
+      prompt: "Gray smoke cloud puff, soft, particle"
+    - key: fx_warp_ring
+      size: 64
+      prompt: "Blue expanding energy ring, teleport warp, sci-fi"
+    - key: fx_hit_spark
+      size: 16
+      prompt: "White impact flash spark, collision burst"
+    - key: fx_mining_spark
+      size: 8
+      prompt: "Tiny yellow-green debris spark, mining particle"
