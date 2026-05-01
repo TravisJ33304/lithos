@@ -17,6 +17,7 @@ style_prefix: >
   no background.
 
 output_dir: "../../client/public/sprites"
+trim_padding: 2
 
 sprites:
   entities:

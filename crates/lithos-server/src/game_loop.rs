@@ -6,6 +6,7 @@ use rand::Rng;
 use serde::Serialize;
 use sqlx::Row;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -26,7 +27,7 @@ use lithos_world::resources::{
     SimConfig, TraderMarket, XpGainRequest, ZoneChangeEvents, ZoneTransferRequest,
 };
 use lithos_world::simulation::Simulation;
-use lithos_world::tilemap::{ChunkCoord, TileMap};
+use lithos_world::tilemap::{ChunkCoord, TileMap, tile_to_world, world_to_tile};
 use lithos_world::world_gen::{Biome, WorldGenerator};
 
 use crate::ServerConfig;
@@ -77,9 +78,22 @@ fn normalize_username(name: &str) -> String {
     }
 }
 
+fn is_dev_callsign_token(token: &str) -> bool {
+    let trimmed = token.trim();
+    trimmed.contains('#') || !trimmed.contains('.')
+}
+
+fn default_solo_faction_id(username: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    username.hash(&mut hasher);
+    1_000_000 + (hasher.finish() % 900_000_000)
+}
+
 async fn resolve_join_from_token(token: &str, config: &ServerConfig) -> Result<AuthJoin> {
     let token = token.trim();
-    if let Some(jwks_url) = config.supabase_jwks_url.as_deref() {
+    if let Some(jwks_url) = config.supabase_jwks_url.as_deref()
+        && !is_dev_callsign_token(token)
+    {
         let claims = auth::validate_supabase_jwt(
             token,
             jwks_url,
@@ -161,6 +175,76 @@ fn send_to_faction(connections: &ConnectionManager, faction_id: u64, msg: &Serve
             }
         }
     }
+}
+
+fn pick_safe_border_spawn(tilemap: &TileMap, seed: u64, world_half_size: f32) -> Vec2 {
+    let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+    let outer = world_half_size * 0.9;
+    let inner = world_half_size * 0.75;
+    for _ in 0..256 {
+        state = state
+            .wrapping_mul(2862933555777941757)
+            .wrapping_add(3037000493);
+        let angle = (state as f32 / u64::MAX as f32) * std::f32::consts::TAU;
+        state = state
+            .wrapping_mul(2862933555777941757)
+            .wrapping_add(3037000493);
+        let radius = inner + (state as f32 / u64::MAX as f32) * (outer - inner);
+        let pos = Vec2::new(angle.cos() * radius, angle.sin() * radius);
+        if is_spawn_area_clear(tilemap, pos, 18.0) {
+            return pos;
+        }
+    }
+    for ring_step in (3..=18).rev() {
+        let ring = world_half_size * ring_step as f32 / 20.0;
+        for i in 0..128 {
+            let angle = ((i as f32 / 128.0) + seed as f32 * 0.000_001) * std::f32::consts::TAU;
+            let pos = Vec2::new(angle.cos() * ring, angle.sin() * ring);
+            if is_spawn_area_clear(tilemap, pos, 18.0) {
+                return pos;
+            }
+        }
+    }
+    Vec2::ZERO
+}
+
+fn is_spawn_clear(tilemap: &TileMap, pos: Vec2, radius: f32) -> bool {
+    let samples = [
+        Vec2::ZERO,
+        Vec2::new(radius, 0.0),
+        Vec2::new(-radius, 0.0),
+        Vec2::new(0.0, radius),
+        Vec2::new(0.0, -radius),
+        Vec2::new(radius * 0.707, radius * 0.707),
+        Vec2::new(-radius * 0.707, radius * 0.707),
+        Vec2::new(radius * 0.707, -radius * 0.707),
+        Vec2::new(-radius * 0.707, -radius * 0.707),
+    ];
+    samples
+        .iter()
+        .all(|offset| tilemap.is_passable_loaded(pos + *offset, false))
+}
+
+fn is_spawn_area_clear(tilemap: &TileMap, pos: Vec2, radius: f32) -> bool {
+    if !is_spawn_clear(tilemap, pos, radius) {
+        return false;
+    }
+
+    let directions = [
+        Vec2::new(1.0, 0.0),
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(0.0, -1.0),
+        Vec2::new(0.707, 0.707),
+        Vec2::new(-0.707, 0.707),
+        Vec2::new(0.707, -0.707),
+        Vec2::new(-0.707, -0.707),
+    ];
+    let clear_exits = directions
+        .iter()
+        .filter(|dir| is_spawn_clear(tilemap, pos + **dir * 96.0, radius))
+        .count();
+    clear_exits >= 4
 }
 
 fn raid_snapshot(raid: &RaidState, tick: u64, dt: f32) -> RaidStateSnapshot {
@@ -736,7 +820,7 @@ fn spawn_resource_veins(
 
         for _ in 0..cluster_size {
             let offset = Vec2::new(rng.gen_range(-120.0..120.0), rng.gen_range(-120.0..120.0));
-            let pos = center + offset;
+            let pos = tile_to_world(world_to_tile(center + offset));
 
             let pos_ok = {
                 let tilemap = sim.world.resource::<TileMap>();
@@ -967,15 +1051,23 @@ async fn handle_event(
                         .fetch_optional(pool)
                         .await?;
 
+                let default_spawn = {
+                    let tilemap = sim.world.resource::<TileMap>();
+                    pick_safe_border_spawn(
+                        &tilemap,
+                        now_unix_ms() ^ (entity_id.0 as u64),
+                        sim.world.resource::<SimConfig>().world_half_size,
+                    )
+                };
                 let pos = row
                     .as_ref()
                     .map(|r| {
                         Vec2::new(
-                            r.try_get::<f64, _>("x").unwrap_or(0.0) as f32,
-                            r.try_get::<f64, _>("y").unwrap_or(0.0) as f32,
+                            r.try_get::<f64, _>("x").unwrap_or(default_spawn.x as f64) as f32,
+                            r.try_get::<f64, _>("y").unwrap_or(default_spawn.y as f64) as f32,
                         )
                     })
-                    .unwrap_or(Vec2::ZERO);
+                    .unwrap_or(default_spawn);
                 let health = row
                     .as_ref()
                     .map(|r| r.try_get::<f64, _>("health").unwrap_or(100.0) as f32)
@@ -984,15 +1076,20 @@ async fn handle_event(
                     .as_ref()
                     .and_then(|r| r.try_get::<i64, _>("faction_id").ok())
                     .map(|v| v as u64);
-                let faction_id = auth.faction_id.or(persisted_faction);
+                let faction_id = auth
+                    .faction_id
+                    .or(persisted_faction)
+                    .or(Some(default_solo_faction_id(&auth.username)));
 
                 if row.is_none() {
                     sqlx::query(
                         "INSERT INTO players (id, username, x, y, zone_id, health, inventory, auth_subject, faction_id) \
-                         VALUES ($1, $2, 0.0, 0.0, 'overworld', 100.0, '[]', $3, $4)",
+                         VALUES ($1, $2, $3, $4, 'overworld', 100.0, '[]', $5, $6)",
                     )
                     .bind(uuid::Uuid::new_v4())
                     .bind(&auth.username)
+                    .bind(pos.x as f64)
+                    .bind(pos.y as f64)
                     .bind(auth.auth_subject.as_deref())
                     .bind(faction_id.map(|id| id as i64))
                     .execute(pool)

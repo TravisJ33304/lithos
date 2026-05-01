@@ -43,6 +43,7 @@ interface RenderedEntity {
 
 const WORLD_SIZE = 4000;
 const INTERPOLATION_SPEED = 0.2;
+const PLAYER_BARREL_OFFSET = 20;
 
 export class OverworldScene extends Phaser.Scene {
 	private net!: NetworkClient;
@@ -71,6 +72,8 @@ export class OverworldScene extends Phaser.Scene {
 	private noise2D!: (x: number, y: number) => number;
 	private worldSeed: number = 12345;
 	private craftKey!: Phaser.Input.Keyboard.Key;
+	private enterKey!: Phaser.Input.Keyboard.Key;
+	private respawnKey!: Phaser.Input.Keyboard.Key;
 
 	private buildKey!: Phaser.Input.Keyboard.Key;
 	private buildMode = false;
@@ -88,6 +91,8 @@ export class OverworldScene extends Phaser.Scene {
 	private currentAmmo = 0;
 	private maxAmmo = 0;
 	private particles!: ParticleManager;
+	private lastHudUpdateAt = 0;
+	private lastBackgroundUpdateAt = 0;
 
 	constructor() {
 		super({ key: "OverworldScene" });
@@ -172,6 +177,12 @@ export class OverworldScene extends Phaser.Scene {
 			this.spaceKey = this.input.keyboard.addKey(
 				Phaser.Input.Keyboard.KeyCodes.SPACE,
 			);
+			this.enterKey = this.input.keyboard.addKey(
+				Phaser.Input.Keyboard.KeyCodes.ENTER,
+			);
+			this.respawnKey = this.input.keyboard.addKey(
+				Phaser.Input.Keyboard.KeyCodes.R,
+			);
 		}
 
 		// C key for crafting, B for building
@@ -191,6 +202,7 @@ export class OverworldScene extends Phaser.Scene {
 						],
 					)
 					.on("down", () => {
+						if (gameUi.isTextInputFocused()) return;
 						this.hotbarSlot = i;
 						this.updateHotbarUI();
 					});
@@ -199,10 +211,14 @@ export class OverworldScene extends Phaser.Scene {
 			this.input.keyboard
 				.addKey(Phaser.Input.Keyboard.KeyCodes.ZERO)
 				.on("down", () => {
+					if (gameUi.isTextInputFocused()) return;
 					this.hotbarSlot = 0;
 					this.updateHotbarUI();
 				});
 		}
+
+		this.input.mouse?.disableContextMenu();
+		this.input.setDefaultCursor("default");
 
 		// Build ghost (40x40 grid)
 		this.buildGhost = this.add.rectangle(0, 0, 40, 40, 0x58a6ff, 0.4);
@@ -212,6 +228,8 @@ export class OverworldScene extends Phaser.Scene {
 
 		// --- Input processing ---
 		this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+			gameUi.blurChat();
+			if (gameUi.isTextInputFocused()) return;
 			if (this.isDead || gameUi.isCraftingPanelOpen()) return;
 			// Convert screen coordinates to world coordinates
 			const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -275,11 +293,11 @@ export class OverworldScene extends Phaser.Scene {
 				const dx = worldPoint.x - myEntity.sprite.x;
 				const dy = worldPoint.y - myEntity.sprite.y;
 				const angle = Math.atan2(dy, dx);
-				this.particles.createMuzzleFlash(
-					myEntity.sprite.x,
-					myEntity.sprite.y,
-					angle,
-				);
+				const muzzleX =
+					myEntity.sprite.x + Math.cos(angle) * PLAYER_BARREL_OFFSET;
+				const muzzleY =
+					myEntity.sprite.y + Math.sin(angle) * PLAYER_BARREL_OFFSET;
+				this.particles.createMuzzleFlash(muzzleX, muzzleY, angle);
 				this.net.send({
 					Fire: {
 						direction: { x: dx, y: dy },
@@ -413,37 +431,31 @@ export class OverworldScene extends Phaser.Scene {
 		const me = this.entities.get(this.myEntityId);
 
 		if (me && !this.isDead) {
-			// Calculate Biome Background Color
-			const pos = me.sprite;
-			const dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y);
-			const noiseVal = this.noise2D(pos.x / 1000.0, pos.y / 1000.0);
-			const perturbedDist = dist + noiseVal * 500.0;
-
-			let targetColor = Phaser.Display.Color.HexStringToColor("#111111"); // OuterRim (Dark Gray)
-			if (perturbedDist < 1500.0) {
-				targetColor = Phaser.Display.Color.HexStringToColor("#330000"); // Core (Deep Red)
-			} else if (perturbedDist < 3500.0) {
-				targetColor = Phaser.Display.Color.HexStringToColor("#1a0a2e"); // MidZone (Purple/Blue)
+			this.lastBackgroundUpdateAt += delta;
+			if (this.lastBackgroundUpdateAt >= 80) {
+				this.lastBackgroundUpdateAt = 0;
+				const pos = me.sprite;
+				const dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y);
+				const noiseVal = this.noise2D(pos.x / 1000.0, pos.y / 1000.0);
+				const perturbedDist = dist + noiseVal * 500.0;
+				let targetColor = Phaser.Display.Color.HexStringToColor("#111111");
+				if (perturbedDist < 1500.0) {
+					targetColor = Phaser.Display.Color.HexStringToColor("#330000");
+				} else if (perturbedDist < 3500.0) {
+					targetColor = Phaser.Display.Color.HexStringToColor("#1a0a2e");
+				}
+				const currentColor = Phaser.Display.Color.Interpolate.ColorWithColor(
+					this.cameras.main.backgroundColor,
+					targetColor,
+					100,
+					5,
+				);
+				this.cameras.main.setBackgroundColor(currentColor);
 			}
-
-			// Lerp color for smooth transition
-			const currentColor = Phaser.Display.Color.Interpolate.ColorWithColor(
-				this.cameras.main.backgroundColor,
-				targetColor,
-				100,
-				5,
-			);
-			this.cameras.main.setBackgroundColor(currentColor);
 		}
 
 		if (this.isDead) {
-			// Handle respawn
-			if (
-				this.input.keyboard &&
-				Phaser.Input.Keyboard.JustDown(
-					this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
-				)
-			) {
+			if (Phaser.Input.Keyboard.JustDown(this.respawnKey)) {
 				this.net.send("Respawn");
 				this.isDead = false;
 				gameUi.showDeathOverlay(false);
@@ -454,8 +466,9 @@ export class OverworldScene extends Phaser.Scene {
 		// --- Input processing ---
 		let dx = 0;
 		let dy = 0;
+		const uiFocused = gameUi.isTextInputFocused();
 
-		if (this.wasd) {
+		if (this.wasd && !uiFocused) {
 			if (this.wasd.A.isDown || this.cursors.left.isDown) dx -= 1;
 			if (this.wasd.D.isDown || this.cursors.right.isDown) dx += 1;
 			if (this.wasd.W.isDown || this.cursors.up.isDown) dy -= 1;
@@ -480,29 +493,35 @@ export class OverworldScene extends Phaser.Scene {
 		}
 
 		// Zone transfer on Space.
-		if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+		if (
+			!uiFocused &&
+			this.spaceKey &&
+			Phaser.Input.Keyboard.JustDown(this.spaceKey)
+		) {
 			this.net.send({ ZoneTransfer: { target: { AsteroidBase: 1 } } });
 		}
 
 		// Crafting panel toggle on C.
-		if (this.craftKey && Phaser.Input.Keyboard.JustDown(this.craftKey)) {
+		if (
+			!uiFocused &&
+			this.craftKey &&
+			Phaser.Input.Keyboard.JustDown(this.craftKey)
+		) {
 			gameUi.toggleCraftingPanel();
 		}
 
 		// Build mode toggle on B.
-		if (this.buildKey && Phaser.Input.Keyboard.JustDown(this.buildKey)) {
+		if (
+			!uiFocused &&
+			this.buildKey &&
+			Phaser.Input.Keyboard.JustDown(this.buildKey)
+		) {
 			this.buildMode = !this.buildMode;
 			this.buildGhost.setVisible(this.buildMode);
 			gameUi.setBuildMode(this.buildMode);
 		}
 
-		// Chat toggle on Enter.
-		if (
-			this.input.keyboard &&
-			Phaser.Input.Keyboard.JustDown(
-				this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER),
-			)
-		) {
+		if (!uiFocused && Phaser.Input.Keyboard.JustDown(this.enterKey)) {
 			gameUi.focusChat();
 		}
 
@@ -547,6 +566,9 @@ export class OverworldScene extends Phaser.Scene {
 				ent.facingLine.setPosition(ent.sprite.x, ent.sprite.y);
 			}
 		}
+		if (me) {
+			this.cameras.main.centerOn(me.sprite.x, me.sprite.y);
+		}
 
 		// Update my facing line
 		if (!this.isDead && me?.facingLine) {
@@ -556,14 +578,18 @@ export class OverworldScene extends Phaser.Scene {
 			me.facingLine.setRotation(angle);
 		}
 
-		gameUi.updateVitals({
-			health: `${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
-			oxygen: `${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
-			ammo: `${this.currentAmmo}/${this.maxAmmo}`,
-			credits: this.factionCredits.toLocaleString(),
-			fps: `${Math.round(this.game.loop.actualFps)}`,
-			tick: `${this.latestTick}`,
-		});
+		this.lastHudUpdateAt += delta;
+		if (this.lastHudUpdateAt >= 100) {
+			this.lastHudUpdateAt = 0;
+			gameUi.updateVitals({
+				health: `${Math.max(0, Math.floor(this.currentHealth))}/${this.maxHealth}`,
+				oxygen: `${Math.max(0, Math.floor(this.currentOxygen))}/${this.maxOxygen}`,
+				ammo: `${this.currentAmmo}/${this.maxAmmo}`,
+				credits: this.factionCredits.toLocaleString(),
+				fps: `${Math.round(this.game.loop.actualFps)}`,
+				tick: `${this.latestTick}`,
+			});
+		}
 	}
 
 	private handleWorldMapChunk(chunkMsg: {
@@ -666,11 +692,6 @@ export class OverworldScene extends Phaser.Scene {
 			}
 		}
 
-		// Camera follow.
-		const me = this.entities.get(this.myEntityId);
-		if (me) {
-			this.cameras.main.centerOn(me.sprite.x, me.sprite.y);
-		}
 		gameUi.updateMinimap(snapshot.entities, this.myEntityId);
 	}
 
@@ -759,7 +780,7 @@ export class OverworldScene extends Phaser.Scene {
 			facingLine = this.add.graphics();
 			facingLine.lineStyle(2, 0xffffff, 0.8);
 			facingLine.moveTo(0, 0);
-			facingLine.lineTo(20, 0);
+			facingLine.lineTo(PLAYER_BARREL_OFFSET, 0);
 			facingLine.strokePath();
 			facingLine.setDepth(12);
 		}

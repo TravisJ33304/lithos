@@ -10,7 +10,7 @@ Usage:
 
 import argparse
 import base64
-import json
+import io
 import os
 import sys
 import time
@@ -18,14 +18,34 @@ from pathlib import Path
 
 import requests
 import yaml
+from PIL import Image
 
 
 CONFIG_PATH = Path(__file__).with_name("config.yaml")
 RAW_DIR = Path(__file__).parent / "raw"
 
 
+def trim_transparent_bounds(data: bytes, padding: int = 2) -> bytes:
+    with Image.open(io.BytesIO(data)).convert("RGBA") as image:
+        alpha = image.getchannel("A")
+        bbox = alpha.getbbox()
+        if bbox is None:
+            out = io.BytesIO()
+            image.save(out, format="PNG")
+            return out.getvalue()
+        left, top, right, bottom = bbox
+        left = max(0, left - padding)
+        top = max(0, top - padding)
+        right = min(image.width, right + padding)
+        bottom = min(image.height, bottom + padding)
+        cropped = image.crop((left, top, right, bottom))
+        out = io.BytesIO()
+        cropped.save(out, format="PNG")
+        return out.getvalue()
+
+
 def load_config():
-    with open(CONFIG_PATH, "r") as f:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -52,7 +72,7 @@ def ensure_model_loaded(cfg: dict) -> bool:
         return False
 
 
-def generate_one(cfg: dict, key: str, prompt: str, size: int | list) -> bytes | None:
+def generate_one(cfg: dict, key: str, prompt: str, _size: int | list) -> bytes | None:
     host = cfg["api"]["host"]
     endpoint = cfg["api"]["endpoint"]
     model = cfg["api"]["model"]
@@ -113,6 +133,10 @@ def main():
             print(f"[GEN] {category}/{key} ...")
             img_bytes = generate_one(cfg, key, item["prompt"], item["size"])
             if img_bytes:
+                img_bytes = trim_transparent_bounds(
+                    img_bytes,
+                    int(cfg.get("trim_padding", 2)),
+                )
                 out_path.write_bytes(img_bytes)
                 print(f"  -> {out_path}")
                 generated += 1

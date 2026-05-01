@@ -35,6 +35,23 @@ class GameUiManager {
 	private deathOverlay: HTMLDivElement;
 	private trader: HTMLDivElement;
 	private loading: HTMLDivElement;
+	private hotbar: HTMLDivElement;
+	private hotbarSelected: HTMLDivElement;
+	private minimapSvg: SVGSVGElement;
+	private creditsEl: HTMLSpanElement;
+	private fpsEl: HTMLSpanElement;
+	private tickEl: HTMLSpanElement;
+	private vitalEls: Record<string, HTMLSpanElement> = {};
+	private hotbarSignature = "";
+	private minimapSignature = "";
+	private lastVitals: {
+		health: string;
+		oxygen: string;
+		ammo: string;
+		credits: string;
+		fps: string;
+		tick: string;
+	} | null = null;
 	private craftingCatalog: {
 		items: ItemDefinition[];
 		recipes: RecipeDefinition[];
@@ -77,6 +94,25 @@ class GameUiManager {
 		this.deathOverlay = this.root.querySelector("#ui-death") as HTMLDivElement;
 		this.trader = this.root.querySelector("#ui-trader") as HTMLDivElement;
 		this.loading = this.root.querySelector("#ui-loading") as HTMLDivElement;
+		this.hotbar = this.root.querySelector("#ui-hotbar") as HTMLDivElement;
+		this.hotbarSelected = this.root.querySelector(
+			"#ui-hotbar-selected",
+		) as HTMLDivElement;
+		this.minimapSvg = this.root.querySelector(
+			"#ui-minimap-canvas",
+		) as SVGSVGElement;
+		this.creditsEl = this.root.querySelector("#ui-credits") as HTMLSpanElement;
+		this.fpsEl = this.root.querySelector("#ui-fps") as HTMLSpanElement;
+		this.tickEl = this.root.querySelector("#ui-tick") as HTMLSpanElement;
+		this.vitalEls.health = this.root.querySelector(
+			"#ui-health-value",
+		) as HTMLSpanElement;
+		this.vitalEls.oxygen = this.root.querySelector(
+			"#ui-oxygen-value",
+		) as HTMLSpanElement;
+		this.vitalEls.ammo = this.root.querySelector(
+			"#ui-ammo-value",
+		) as HTMLSpanElement;
 
 		const joinButton = this.root.querySelector(
 			"#ui-join-btn",
@@ -111,11 +147,22 @@ class GameUiManager {
 			this.root.querySelector("#ui-trader-close") as HTMLButtonElement
 		).addEventListener("click", () => this.closeTraderPanel());
 		this.chatInput.addEventListener("keydown", (event) => {
-			if (event.key !== "Enter") return;
-			const text = this.chatInput.value.trim();
-			if (!text) return;
-			this.chatInput.value = "";
-			this.onChat?.(text);
+			event.stopPropagation();
+			if (event.key === "Escape") {
+				event.preventDefault();
+				this.blurChat();
+				return;
+			}
+			if (event.key === "Enter") {
+				const text = this.chatInput.value.trim();
+				if (!text) {
+					this.blurChat();
+					return;
+				}
+				this.chatInput.value = "";
+				this.onChat?.(text);
+				this.blurChat();
+			}
 		});
 
 		this.hideAllGameplay();
@@ -252,15 +299,25 @@ class GameUiManager {
 		fps: string;
 		tick: string;
 	}): void {
-		this.updateVital("health", payload.health);
-		this.updateVital("oxygen", payload.oxygen);
-		this.updateVital("ammo", payload.ammo);
-		(this.root.querySelector("#ui-credits") as HTMLSpanElement).textContent =
-			payload.credits;
-		(this.root.querySelector("#ui-fps") as HTMLSpanElement).textContent =
-			payload.fps;
-		(this.root.querySelector("#ui-tick") as HTMLSpanElement).textContent =
-			payload.tick;
+		if (this.lastVitals?.health !== payload.health) {
+			this.updateVital("health", payload.health);
+		}
+		if (this.lastVitals?.oxygen !== payload.oxygen) {
+			this.updateVital("oxygen", payload.oxygen);
+		}
+		if (this.lastVitals?.ammo !== payload.ammo) {
+			this.updateVital("ammo", payload.ammo);
+		}
+		if (this.lastVitals?.credits !== payload.credits) {
+			this.creditsEl.textContent = payload.credits;
+		}
+		if (this.lastVitals?.fps !== payload.fps) {
+			this.fpsEl.textContent = payload.fps;
+		}
+		if (this.lastVitals?.tick !== payload.tick) {
+			this.tickEl.textContent = payload.tick;
+		}
+		this.lastVitals = payload;
 	}
 
 	updateInventory(
@@ -356,8 +413,15 @@ class GameUiManager {
 	}
 
 	updateHotbar(activeSlot: number, items: HotbarItem[]): void {
-		const hotbar = this.root.querySelector("#ui-hotbar") as HTMLDivElement;
-		hotbar.innerHTML = "";
+		const signature = `${activeSlot}|${items
+			.map((item) => `${item.label}:${item.quantity ?? 0}`)
+			.join(",")}`;
+		if (signature === this.hotbarSignature) {
+			this.updateHotbarSelectedText(activeSlot, items);
+			return;
+		}
+		this.hotbarSignature = signature;
+		this.hotbar.innerHTML = "";
 		for (let slot = 0; slot <= 9; slot++) {
 			const item =
 				slot === 0
@@ -373,8 +437,22 @@ class GameUiManager {
 				<span class="slot-label">${item ? this.abbrev(item.label) : ""}</span>
 				<span class="slot-amount">${item?.quantity ?? ""}</span>
 			`;
-			hotbar.appendChild(node);
+			this.hotbar.appendChild(node);
 		}
+		this.updateHotbarSelectedText(activeSlot, items);
+	}
+
+	private updateHotbarSelectedText(
+		activeSlot: number,
+		items: HotbarItem[],
+	): void {
+		if (activeSlot === 0) {
+			this.hotbarSelected.textContent = "FIRE / UNARMED";
+			return;
+		}
+		const selected = items[activeSlot - 1];
+		this.hotbarSelected.textContent =
+			selected?.title ?? selected?.label ?? "EMPTY";
 	}
 
 	updateMinimap(
@@ -385,11 +463,21 @@ class GameUiManager {
 		}>,
 		playerId: number,
 	): void {
-		const svg = this.root.querySelector("#ui-minimap-canvas") as SVGSVGElement;
+		const minimapEntities = entities.slice(0, 80);
+		const signature = minimapEntities
+			.map(
+				(entity) =>
+					`${entity.id}:${entity.position.x.toFixed(1)}:${entity.position.y.toFixed(1)}`,
+			)
+			.join("|");
+		if (signature === this.minimapSignature) {
+			return;
+		}
+		this.minimapSignature = signature;
 		const player = entities.find((entity) => entity.id === playerId);
 		const px = player?.position.x ?? 0;
 		const py = player?.position.y ?? 0;
-		const dots = entities.slice(0, 80).map((entity) => {
+		const dots = minimapEntities.map((entity) => {
 			const x = Math.max(4, Math.min(146, 75 + (entity.position.x - px) / 32));
 			const y = Math.max(4, Math.min(146, 75 + (entity.position.y - py) / 32));
 			const color =
@@ -404,7 +492,7 @@ class GameUiManager {
 								: "#e8eaed";
 			return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${entity.id === playerId ? 2.5 : 1.5}" fill="${color}"/>`;
 		});
-		svg.innerHTML = `<rect width="150" height="150" fill="#0d1117"/>${dots.join("")}`;
+		this.minimapSvg.innerHTML = `<rect width="150" height="150" fill="#0d1117"/>${dots.join("")}`;
 	}
 
 	setBuildMode(enabled: boolean): void {
@@ -451,6 +539,19 @@ class GameUiManager {
 
 	focusChat(): void {
 		this.chatInput.focus();
+	}
+
+	blurChat(): void {
+		this.chatInput.blur();
+	}
+
+	isTextInputFocused(): boolean {
+		const active = document.activeElement;
+		if (!active) return false;
+		if (active === this.chatInput) return true;
+		if (active instanceof HTMLInputElement) return true;
+		if (active instanceof HTMLTextAreaElement) return true;
+		return active instanceof HTMLElement && active.isContentEditable;
 	}
 
 	openTraderPanel(
@@ -528,6 +629,7 @@ class GameUiManager {
 					<div id="ui-chat-log"></div>
 					<div id="ui-chat-input-line"><span>&gt;</span><input id="ui-chat-input" placeholder="chat..."/></div>
 				</div>
+				<div id="ui-hotbar-selected"></div>
 				<div id="ui-hotbar"></div>
 				<div id="ui-info">[SPACE] Zone Transfer [C] Fabricator [B] Build [0-9] Hotbar [ENTER] Chat</div>
 				<div id="ui-flash-area"></div>
@@ -611,6 +713,7 @@ class GameUiManager {
       #ui-chat-log { min-height: 58px; max-height: 120px; overflow-y: auto; background: rgba(10,14,26,0.85); border: 1px solid var(--border-main); padding: 6px 8px; font: 10px "JetBrains Mono", monospace; }
       #ui-chat-input-line { display: flex; gap: 5px; align-items: center; margin-top: 2px; background: rgba(10,14,26,0.85); border: 1px solid var(--border-main); padding: 3px 6px; font: 10px "JetBrains Mono", monospace; color: var(--text-dim); }
       #ui-chat-input { flex: 1; background: transparent; border: 0; outline: none; color: var(--text-primary); font: 10px "JetBrains Mono", monospace; }
+      #ui-hotbar-selected { position: absolute; bottom: 69px; left: 50%; transform: translateX(-50%); min-width: 180px; text-align: center; color: var(--text-primary); font: 700 11px Orbitron, monospace; letter-spacing: 1px; pointer-events: none; }
       #ui-hotbar { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; }
       .ui-hotbar-slot { width: 48px; height: 48px; background: rgba(10,14,26,0.88); border: 1px solid var(--border-main); display: flex; align-items: center; justify-content: center; position: relative; font: 700 10px "JetBrains Mono", monospace; color: var(--text-secondary); }
       .ui-hotbar-slot.active { border-color: var(--highlight); background: rgba(88,166,255,0.12); box-shadow: 0 0 8px rgba(88,166,255,0.15); }
@@ -621,7 +724,7 @@ class GameUiManager {
       .ui-flash { font: 700 14px Orbitron, monospace; animation: ui-flash-up 2.5s ease-out forwards; }
       .ui-flash.xp { color: var(--safe); } .ui-flash.error { color: var(--danger); } .ui-flash.info { color: var(--highlight); }
       @keyframes ui-flash-up { 0% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-24px); } }
-      #ui-crosshair { position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
+      #ui-crosshair { display: none; }
       #ui-crosshair[hidden] { display: none; }
       #ui-crosshair::before, #ui-crosshair::after { content:""; position: absolute; background: var(--danger); }
       #ui-crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }

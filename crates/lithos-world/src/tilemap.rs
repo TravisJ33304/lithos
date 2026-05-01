@@ -404,16 +404,9 @@ impl Default for TileMap {
 fn generate_chunk(coord: ChunkCoord, world_seed: u32) -> Chunk {
     let mut chunk = Chunk::new(coord);
 
-    // Derive a per-chunk seed so each chunk is deterministic but unique.
-    let chunk_seed = world_seed
-        .wrapping_add(coord.x as u32)
-        .wrapping_mul(374761393)
-        .wrapping_add(coord.y as u32)
-        .wrapping_mul(668265263);
-
-    let perlin = Perlin::new(chunk_seed);
-    let perlin2 = Perlin::new(chunk_seed.wrapping_add(1));
-    let perlin3 = Perlin::new(chunk_seed.wrapping_add(2));
+    let perlin = Perlin::new(world_seed);
+    let perlin2 = Perlin::new(world_seed.wrapping_add(1));
+    let perlin3 = Perlin::new(world_seed.wrapping_add(2));
 
     for ly in 0..CHUNK_SIZE {
         for lx in 0..CHUNK_SIZE {

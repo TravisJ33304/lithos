@@ -1,5 +1,7 @@
 //! ECS systems — game logic that runs each tick.
 
+use std::collections::HashMap;
+
 use bevy_ecs::prelude::*;
 
 use crate::components::{
@@ -8,11 +10,11 @@ use crate::components::{
     ResourceNode, ResourceType, Velocity, Weapon, Zone,
 };
 use crate::resources::{
-    ActiveDynamicEvents, AmmoChangedEvent, CombatEvents, DynamicEventBus, EntityRegistry,
-    FactionVaults, HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq,
-    MineQueue, MiningEvent, MiningEvents, PlayerDiedEvent, ProgressionQueue,
-    ProgressionUpdatedEvent, RaidEventBus, RaidStateStore, SimConfig, SpawnProjectileEvent,
-    TickCounter, TraderMarket, XpGainRequest, ZoneChangeEvent, ZoneChangeEvents,
+    ActiveDynamicEvents, CombatEvents, DynamicEventBus, EntityRegistry, FactionVaults,
+    HealthChangedEvent, InputQueue, InventoryUpdatedEvent, LastProcessedSeq, MineQueue,
+    MiningEvent, MiningEvents, PlayerDiedEvent, ProgressionQueue, ProgressionUpdatedEvent,
+    RaidEventBus, RaidStateStore, SimConfig, SpawnProjectileEvent, TickCounter, TraderMarket,
+    XpGainRequest, ZoneChangeEvent, ZoneChangeEvents,
 };
 
 /// Advance the tick counter.
@@ -56,12 +58,175 @@ pub fn position_history_system(
 
 /// Apply velocity to position (Euler integration).
 pub fn movement_system(
+    mut commands: Commands,
     config: Res<SimConfig>,
-    mut query: Query<(&mut Position, &Velocity), Without<Dead>>,
+    tilemap: ResMut<crate::tilemap::TileMap>,
+    time: Res<TickCounter>,
+    mut registry: ResMut<EntityRegistry>,
+    mut query: Query<
+        (
+            Entity,
+            &mut Position,
+            &Velocity,
+            &Collider,
+            Option<&Flying>,
+            Option<&Projectile>,
+        ),
+        Without<Dead>,
+    >,
 ) {
-    for (mut pos, vel) in query.iter_mut() {
-        pos.0 += vel.0 * config.dt;
+    let current_time = time.tick as f64 * config.dt as f64;
+    for (entity, mut pos, vel, collider, flying, projectile) in query.iter_mut() {
+        let delta = vel.0 * config.dt;
+        let target = pos.0 + delta;
+        let is_flying = flying.is_some();
+        if let Some(projectile) = projectile {
+            if projectile.spawn_time >= current_time {
+                continue;
+            }
+            if is_projectile_path_clear(&tilemap, pos.0, target) {
+                pos.0 = target;
+            } else {
+                if let Some(id) = registry.by_entity.get(&entity).copied() {
+                    registry.unregister(id);
+                }
+                commands.entity(entity).despawn();
+            }
+            continue;
+        }
+
+        if is_entity_clear_at(&tilemap, target, collider.radius, is_flying) {
+            pos.0 = target;
+            continue;
+        }
+        let x_only = lithos_protocol::Vec2::new(pos.0.x + delta.x, pos.0.y);
+        if is_entity_clear_at(&tilemap, x_only, collider.radius, is_flying) {
+            pos.0.x = x_only.x;
+        }
+        let y_only = lithos_protocol::Vec2::new(pos.0.x, pos.0.y + delta.y);
+        if is_entity_clear_at(&tilemap, y_only, collider.radius, is_flying) {
+            pos.0.y = y_only.y;
+        }
     }
+}
+
+fn is_entity_clear_at(
+    tilemap: &crate::tilemap::TileMap,
+    pos: lithos_protocol::Vec2,
+    radius: f32,
+    flying: bool,
+) -> bool {
+    let samples = [
+        lithos_protocol::Vec2::ZERO,
+        lithos_protocol::Vec2::new(radius, 0.0),
+        lithos_protocol::Vec2::new(-radius, 0.0),
+        lithos_protocol::Vec2::new(0.0, radius),
+        lithos_protocol::Vec2::new(0.0, -radius),
+        lithos_protocol::Vec2::new(radius * 0.707, radius * 0.707),
+        lithos_protocol::Vec2::new(-radius * 0.707, radius * 0.707),
+        lithos_protocol::Vec2::new(radius * 0.707, -radius * 0.707),
+        lithos_protocol::Vec2::new(-radius * 0.707, -radius * 0.707),
+    ];
+    samples
+        .iter()
+        .all(|offset| tilemap.is_passable_loaded(pos + *offset, flying))
+}
+
+fn is_projectile_path_clear(
+    tilemap: &crate::tilemap::TileMap,
+    from: lithos_protocol::Vec2,
+    to: lithos_protocol::Vec2,
+) -> bool {
+    let delta = to - from;
+    let dist = delta.length();
+    let steps = (dist / (crate::tilemap::TILE_SIZE * 0.5)).ceil().max(1.0) as i32;
+    for step in 1..=steps {
+        let t = step as f32 / steps as f32;
+        let pos = from + delta * t;
+        let Some(tile) = tilemap.get_tile_loaded(pos) else {
+            return false;
+        };
+        if !tile.is_projectile_passable() {
+            return false;
+        }
+    }
+    true
+}
+
+pub fn entity_collision_system(
+    mut movers: Query<
+        (&mut Position, &Collider, &Zone),
+        (With<Velocity>, Without<Projectile>, Without<Dead>),
+    >,
+    statics: Query<
+        (&Position, &Collider, &Zone),
+        (Without<Velocity>, Without<Projectile>, Without<Dead>),
+    >,
+) {
+    {
+        let mut pairs = movers.iter_combinations_mut();
+        while let Some([(mut a_pos, a_col, a_zone), (mut b_pos, b_col, b_zone)]) =
+            pairs.fetch_next()
+        {
+            if a_zone.0 != b_zone.0 {
+                continue;
+            }
+            let delta = b_pos.0 - a_pos.0;
+            let dist_sq = delta.length_squared();
+            let min_dist = a_col.radius + b_col.radius;
+            if dist_sq == 0.0 || dist_sq >= min_dist * min_dist {
+                continue;
+            }
+            let dist = dist_sq.sqrt();
+            let normal = delta / dist;
+            let push = (min_dist - dist) * 0.5;
+            a_pos.0 = a_pos.0 - normal * push;
+            b_pos.0 = b_pos.0 + normal * push;
+        }
+    }
+
+    const CELL_SIZE: f32 = 128.0;
+    let mut static_buckets: HashMap<
+        (lithos_protocol::ZoneId, i32, i32),
+        Vec<(lithos_protocol::Vec2, f32)>,
+    > = HashMap::new();
+
+    for (pos, collider, zone) in statics.iter() {
+        let (cell_x, cell_y) = collision_cell(pos.0, CELL_SIZE);
+        static_buckets
+            .entry((zone.0, cell_x, cell_y))
+            .or_default()
+            .push((pos.0, collider.radius));
+    }
+
+    for (mut mover_pos, mover_col, mover_zone) in movers.iter_mut() {
+        let (cell_x, cell_y) = collision_cell(mover_pos.0, CELL_SIZE);
+        for y in (cell_y - 1)..=(cell_y + 1) {
+            for x in (cell_x - 1)..=(cell_x + 1) {
+                let Some(statics) = static_buckets.get(&(mover_zone.0, x, y)) else {
+                    continue;
+                };
+                for (static_pos, static_radius) in statics {
+                    let delta = mover_pos.0 - *static_pos;
+                    let dist_sq = delta.length_squared();
+                    let min_dist = mover_col.radius + *static_radius;
+                    if dist_sq == 0.0 || dist_sq >= min_dist * min_dist {
+                        continue;
+                    }
+                    let dist = dist_sq.sqrt();
+                    let normal = delta / dist;
+                    mover_pos.0 = mover_pos.0 + normal * (min_dist - dist);
+                }
+            }
+        }
+    }
+}
+
+fn collision_cell(pos: lithos_protocol::Vec2, cell_size: f32) -> (i32, i32) {
+    (
+        (pos.x / cell_size).floor() as i32,
+        (pos.y / cell_size).floor() as i32,
+    )
 }
 
 /// Clamp positions to world bounds.
@@ -80,6 +245,71 @@ pub fn friction_system(mut query: Query<&mut Velocity>) {
     // Currently a no-op: velocity is set directly from input each tick.
     // Players must send Move { direction: Vec2::ZERO } to stop.
     let _ = &mut query;
+}
+
+fn muzzle_offset(radius: f32) -> f32 {
+    (radius + 2.0).max(20.0)
+}
+
+fn find_safe_border_spawn(
+    tilemap: &crate::tilemap::TileMap,
+    seed: u64,
+    world_half_size: f32,
+) -> lithos_protocol::Vec2 {
+    let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+    let outer = world_half_size * 0.9;
+    let inner = world_half_size * 0.75;
+    for _ in 0..256 {
+        state = state
+            .wrapping_mul(2862933555777941757)
+            .wrapping_add(3037000493);
+        let angle = (state as f32 / u64::MAX as f32) * std::f32::consts::TAU;
+        state = state
+            .wrapping_mul(2862933555777941757)
+            .wrapping_add(3037000493);
+        let radius = inner + (state as f32 / u64::MAX as f32) * (outer - inner);
+        let pos = lithos_protocol::Vec2::new(angle.cos() * radius, angle.sin() * radius);
+        if is_spawn_area_clear(tilemap, pos, 18.0) {
+            return pos;
+        }
+    }
+    for ring_step in (3..=18).rev() {
+        let ring = world_half_size * ring_step as f32 / 20.0;
+        for i in 0..128 {
+            let angle = ((i as f32 / 128.0) + seed as f32 * 0.000_001) * std::f32::consts::TAU;
+            let pos = lithos_protocol::Vec2::new(angle.cos() * ring, angle.sin() * ring);
+            if is_spawn_area_clear(tilemap, pos, 18.0) {
+                return pos;
+            }
+        }
+    }
+    lithos_protocol::Vec2::ZERO
+}
+
+fn is_spawn_area_clear(
+    tilemap: &crate::tilemap::TileMap,
+    pos: lithos_protocol::Vec2,
+    radius: f32,
+) -> bool {
+    if !is_entity_clear_at(tilemap, pos, radius, false) {
+        return false;
+    }
+
+    let directions = [
+        lithos_protocol::Vec2::new(1.0, 0.0),
+        lithos_protocol::Vec2::new(-1.0, 0.0),
+        lithos_protocol::Vec2::new(0.0, 1.0),
+        lithos_protocol::Vec2::new(0.0, -1.0),
+        lithos_protocol::Vec2::new(0.707, 0.707),
+        lithos_protocol::Vec2::new(-0.707, 0.707),
+        lithos_protocol::Vec2::new(0.707, -0.707),
+        lithos_protocol::Vec2::new(-0.707, -0.707),
+    ];
+    let clear_exits = directions
+        .iter()
+        .filter(|dir| is_entity_clear_at(tilemap, pos + **dir * 96.0, radius, false))
+        .count();
+    clear_exits >= 4
 }
 
 /// Process zone transfer requests.
@@ -118,7 +348,7 @@ pub fn combat_system(
     mut combat_events: ResMut<CombatEvents>,
     time: Res<TickCounter>,
     config: Res<SimConfig>,
-    mut query: Query<(&Position, &mut Weapon, &Zone), Without<Dead>>,
+    mut query: Query<(&Position, &Collider, &mut Weapon, &Zone), Without<Dead>>,
 ) {
     let current_time = time.tick as f64 * config.dt as f64;
 
@@ -128,7 +358,7 @@ pub fn combat_system(
 
     for req in input_queue.fires.drain(..) {
         if let Some(&ecs_entity) = registry.by_id.get(&req.entity_id)
-            && let Ok((pos, mut weapon, zone)) = query.get_mut(ecs_entity)
+            && let Ok((pos, collider, mut weapon, zone)) = query.get_mut(ecs_entity)
             && current_time >= weapon.last_fired_time + weapon.cooldown_seconds as f64
             && weapon.ammo > 0
         {
@@ -141,8 +371,7 @@ pub fn combat_system(
             }
 
             let proj_vel = dir * weapon.projectile_speed;
-            // Spawn projectile slightly ahead
-            let proj_pos = pos.0 + dir * 20.0;
+            let proj_pos = pos.0 + dir * muzzle_offset(collider.radius);
 
             let new_id = registry.next_entity_id();
             let rewind_ticks = ((req.client_latency_ms as f32 / 1000.0) / config.dt)
@@ -516,6 +745,8 @@ pub fn respawn_system(
     mut input_queue: ResMut<InputQueue>,
     registry: Res<EntityRegistry>,
     tick: Res<TickCounter>,
+    config: Res<SimConfig>,
+    tilemap: Res<crate::tilemap::TileMap>,
     mut combat_events: ResMut<CombatEvents>,
     mut query: Query<
         (
@@ -535,8 +766,12 @@ pub fn respawn_system(
                 query.get_mut(ecs_entity)
         {
             health.current = health.max;
-            pos.0 = lithos_protocol::Vec2::ZERO; // Respawn at origin for now
-            zone.0 = lithos_protocol::ZoneId::Overworld; // Send back to Overworld
+            pos.0 = find_safe_border_spawn(
+                &tilemap,
+                req.entity_id.0 ^ tick.tick,
+                config.world_half_size,
+            );
+            zone.0 = lithos_protocol::ZoneId::Overworld;
             commands.entity(entity).remove::<Dead>();
 
             // Grant Scrapper Dispenser loadout if cooldown has expired.
@@ -625,6 +860,7 @@ pub fn item_pickup_system(
 pub fn npc_ai_system(
     config: Res<SimConfig>,
     tick: Res<TickCounter>,
+    registry: Res<EntityRegistry>,
     mut npcs: Query<
         (
             &mut Npc,
@@ -636,7 +872,7 @@ pub fn npc_ai_system(
         ),
         Without<Dead>,
     >,
-    players: Query<&Position, (With<Player>, Without<Dead>)>,
+    players: Query<(Entity, &Position), (With<Player>, Without<Dead>)>,
 ) {
     for (mut npc, mut health, mut vel, pos, path, guard) in npcs.iter_mut() {
         if npc.npc_type != NpcType::Trader
@@ -658,13 +894,13 @@ pub fn npc_ai_system(
         };
         let speed = config.max_speed * 0.5 * type_speed_mult;
         let mut nearest_dist_sq = f32::MAX;
-        let mut nearest_pos = None;
+        let mut nearest: Option<(Entity, lithos_protocol::Vec2)> = None;
 
-        for player_pos in players.iter() {
+        for (player_entity, player_pos) in players.iter() {
             let dist_sq = (pos.0 - player_pos.0).length_squared();
             if dist_sq < nearest_dist_sq {
                 nearest_dist_sq = dist_sq;
-                nearest_pos = Some(player_pos.0);
+                nearest = Some((player_entity, player_pos.0));
             }
         }
 
@@ -694,14 +930,20 @@ pub fn npc_ai_system(
                 }
             }
             NpcState::Aggro => {
-                if let Some(target) = nearest_pos {
+                if let Some((target_entity, target_pos)) = nearest {
                     if nearest_dist_sq < 1000.0 * 1000.0 && npc.npc_type != NpcType::Trader {
+                        if let Some(target_id) = registry.by_entity.get(&target_entity).copied() {
+                            npc.target = Some(target_id);
+                        }
                         // If we have a path, let npc_pathfinding_system handle velocity.
                         if path.as_ref().is_some_and(|p| !p.waypoints.is_empty()) {
                             vel.0 = lithos_protocol::Vec2::ZERO;
                         } else {
-                            let dir = (target - pos.0).normalize();
+                            let dir = (target_pos - pos.0).normalize();
                             vel.0 = dir * speed;
+                            if npc.npc_type == NpcType::Rover && nearest_dist_sq < 32.0 * 32.0 {
+                                vel.0 = lithos_protocol::Vec2::ZERO;
+                            }
                         }
                     } else {
                         npc.state = NpcState::Patrol;
@@ -713,10 +955,13 @@ pub fn npc_ai_system(
                 }
             }
             NpcState::Patrol | NpcState::Attack => {
-                if let Some(_target) = nearest_pos
+                if let Some((target_entity, _target_pos)) = nearest
                     && nearest_dist_sq < 1000.0 * 1000.0
                     && npc.npc_type != NpcType::Trader
                 {
+                    if let Some(target_id) = registry.by_entity.get(&target_entity).copied() {
+                        npc.target = Some(target_id);
+                    }
                     npc.state = NpcState::Aggro;
                     npc.state_entered_tick = tick.tick;
                     continue;
@@ -801,6 +1046,8 @@ pub fn npc_attack_system(
             Entity,
             &mut Npc,
             &Position,
+            &Collider,
+            &mut Velocity,
             &mut Weapon,
             &Zone,
             Option<&Flying>,
@@ -808,20 +1055,34 @@ pub fn npc_attack_system(
         ),
         (With<Npc>, Without<Dead>),
     >,
-    players: Query<(Entity, &Position, &Zone), (With<Player>, Without<Dead>)>,
+    mut players: Query<
+        (Entity, &Position, &Zone, &Collider, &mut Health),
+        (With<Player>, Without<Dead>),
+    >,
 ) {
     let current_time = tick.tick as f64 * config.dt as f64;
-    combat_events.spawn_projectiles.clear();
-    combat_events.ammo_changes.clear();
 
-    for (_npc_ent, mut npc, pos, mut weapon, zone, flying, mut boss_phase) in npcs.iter_mut() {
+    for (
+        npc_ent,
+        mut npc,
+        pos,
+        npc_collider,
+        mut npc_vel,
+        mut weapon,
+        zone,
+        flying,
+        mut boss_phase,
+    ) in npcs.iter_mut()
+    {
         let Some(target_entity_id) = npc.target else {
             continue;
         };
         let Some(&target_ecs) = registry.by_id.get(&target_entity_id) else {
             continue;
         };
-        let Ok((player_ent, target_pos, target_zone)) = players.get(target_ecs) else {
+        let Ok((player_ent, target_pos, target_zone, player_collider, mut player_health)) =
+            players.get_mut(target_ecs)
+        else {
             continue;
         };
 
@@ -844,6 +1105,7 @@ pub fn npc_attack_system(
         if dist_sq > attack_range_sq {
             continue;
         }
+        npc_vel.0 = lithos_protocol::Vec2::ZERO;
 
         if !has_line_of_sight(&tilemap, pos.0, target_pos.0, flying.is_some()) {
             continue;
@@ -860,6 +1122,17 @@ pub fn npc_attack_system(
         weapon.ammo -= 1;
 
         match npc.npc_type {
+            NpcType::Rover => {
+                let contact = npc_collider.radius + player_collider.radius + 2.0;
+                if dist_sq <= contact * contact {
+                    player_health.current -= weapon.damage;
+                    combat_events.health_changes.push(HealthChangedEvent {
+                        entity_id: target_entity_id,
+                        health: player_health.current,
+                        max_health: player_health.max,
+                    });
+                }
+            }
             NpcType::HeavyFlamethrower => {
                 commands.entity(player_ent).insert(OnFire {
                     remaining_ticks: 60, // 3 seconds at 20 TPS
@@ -930,7 +1203,11 @@ pub fn npc_attack_system(
                             Zone(zone.0),
                             Projectile {
                                 damage: weapon.damage,
-                                owner: target_entity_id,
+                                owner: registry
+                                    .by_entity
+                                    .get(&npc_ent)
+                                    .copied()
+                                    .unwrap_or(target_entity_id),
                                 spawn_time: current_time,
                                 lifespan_seconds: 3.0,
                                 rewind_ticks: 0,
@@ -949,7 +1226,7 @@ pub fn npc_attack_system(
             _ => {
                 let dir = (target_pos.0 - pos.0).normalize();
                 let proj_vel = dir * weapon.projectile_speed;
-                let proj_pos = pos.0 + dir * 20.0;
+                let proj_pos = pos.0 + dir * muzzle_offset(npc_collider.radius);
 
                 let new_id = registry.next_entity_id();
                 let new_ecs_entity = commands
@@ -959,7 +1236,11 @@ pub fn npc_attack_system(
                         Zone(zone.0),
                         Projectile {
                             damage: weapon.damage,
-                            owner: target_entity_id,
+                            owner: registry
+                                .by_entity
+                                .get(&npc_ent)
+                                .copied()
+                                .unwrap_or(target_entity_id),
                             spawn_time: current_time,
                             lifespan_seconds: 2.0,
                             rewind_ticks: 0,
@@ -977,12 +1258,6 @@ pub fn npc_attack_system(
                 });
             }
         }
-
-        combat_events.ammo_changes.push(AmmoChangedEvent {
-            entity_id: target_entity_id,
-            ammo: weapon.ammo,
-            max_ammo: weapon.max_ammo,
-        });
 
         npc.state = NpcState::Attack;
     }
@@ -1659,6 +1934,15 @@ mod tests {
         world.insert_resource(EntityRegistry::default());
         world.insert_resource(ZoneChangeEvents::default());
         world.insert_resource(CombatEvents::default());
+        world.insert_resource(crate::tilemap::TileMap::new(42));
+        {
+            let mut tilemap = world.resource_mut::<crate::tilemap::TileMap>();
+            for y in -1..=1 {
+                for x in -1..=1 {
+                    tilemap.ensure_chunk(crate::tilemap::ChunkCoord { x, y });
+                }
+            }
+        }
         world
     }
 
@@ -1674,6 +1958,7 @@ mod tests {
                     auth_subject: None,
                     faction_id: None,
                 },
+                Collider { radius: 18.0 },
                 Zone(ZoneId::Overworld),
             ))
             .id();
@@ -1695,6 +1980,7 @@ mod tests {
             .get_mut::<Velocity>()
             .unwrap()
             .0 = Vec2::new(100.0, 0.0);
+        world.entity_mut(ecs_entity).insert(Flying);
 
         // Run movement system.
         let mut schedule = Schedule::default();
@@ -1773,6 +2059,44 @@ mod tests {
 
         let zone = world.entity(ecs_entity).get::<Zone>().unwrap();
         assert_eq!(zone.0, ZoneId::AsteroidBase(1));
+    }
+
+    #[test]
+    fn test_npc_aggro_assigns_target() {
+        let mut world = setup_world();
+        let player_id = EntityId(10);
+        let _player = spawn_player(&mut world, player_id);
+        let npc_id = EntityId(11);
+        let npc_entity = world
+            .spawn((
+                Position(Vec2::new(10.0, 0.0)),
+                Velocity(Vec2::ZERO),
+                Npc {
+                    npc_type: NpcType::Rover,
+                    state: NpcState::Patrol,
+                    target: None,
+                    spawn_pos: Vec2::new(10.0, 0.0),
+                    state_entered_tick: 0,
+                },
+                Health {
+                    current: 60.0,
+                    max: 60.0,
+                },
+                Zone(ZoneId::Overworld),
+                Collider { radius: 10.0 },
+            ))
+            .id();
+        world
+            .resource_mut::<EntityRegistry>()
+            .register(npc_id, npc_entity);
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(npc_ai_system);
+        schedule.run(&mut world);
+
+        let npc = world.entity(npc_entity).get::<Npc>().unwrap();
+        assert_eq!(npc.state, NpcState::Aggro);
+        assert_eq!(npc.target, Some(player_id));
     }
 
     /// Stress test: 100 NPCs + 10 players running 1000 ticks.

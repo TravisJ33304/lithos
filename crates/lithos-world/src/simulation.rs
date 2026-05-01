@@ -56,6 +56,7 @@ impl Simulation {
                 systems::respawn_system,
                 systems::position_history_system,
                 systems::movement_system,
+                systems::entity_collision_system,
                 systems::bounds_system,
                 systems::power_grid_system,
                 systems::life_support_system,

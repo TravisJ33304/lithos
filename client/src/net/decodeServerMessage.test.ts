@@ -138,4 +138,21 @@ describe("normalizeServerMessage (legacy map-shaped payloads)", () => {
 		if (!("TraderQuotes" in msg)) throw new Error("expected TraderQuotes");
 		expect(msg.TraderQuotes.quotes[0].daily_credit_limit).toBe(5000);
 	});
+
+	it("normalizes compact interactable payload", () => {
+		const msg = normalizeServerMessage({
+			InteractableUpdated: {
+				interactable: [99, "Salvage", "salvage_torch", true],
+			},
+		});
+		expect("InteractableUpdated" in msg).toBe(true);
+		if (!("InteractableUpdated" in msg))
+			throw new Error("expected InteractableUpdated");
+		expect(msg.InteractableUpdated.interactable.target_entity_id).toBe(99);
+		expect(msg.InteractableUpdated.interactable.kind).toBe("Salvage");
+		expect(msg.InteractableUpdated.interactable.required_tool).toBe(
+			"salvage_torch",
+		);
+		expect(msg.InteractableUpdated.interactable.can_interact).toBe(true);
+	});
 });

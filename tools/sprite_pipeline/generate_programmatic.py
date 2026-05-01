@@ -13,13 +13,13 @@ Usage:
 
 import argparse
 import math
-import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 # Output base directory
 OUT_DIR = Path(__file__).parent / "../../client/public/sprites"
+TRIM_PADDING = 2
 
 # Color palette
 PALETTE = {
@@ -113,6 +113,19 @@ def line(draw: ImageDraw.Draw, x1, y1, x2, y2, fill, width=2):
 def rounded_rect(draw: ImageDraw.Draw, x, y, w, h, radius, fill, outline=None, width=2):
     """Draw a rounded rectangle."""
     draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=fill, outline=outline or PALETTE["outline"], width=width)
+
+
+def trim_transparent_bounds(img: Image.Image, padding: int = TRIM_PADDING) -> Image.Image:
+    alpha = img.getchannel("A")
+    bbox = alpha.getbbox()
+    if bbox is None:
+        return img
+    left, top, right, bottom = bbox
+    left = max(0, left - padding)
+    top = max(0, top - padding)
+    right = min(img.width, right + padding)
+    bottom = min(img.height, bottom + padding)
+    return img.crop((left, top, right, bottom))
 
 
 # ---------------------------------------------------------------------------
@@ -723,6 +736,7 @@ def generate_sprite(category: str, key: str):
 
     func, size = SPRITE_REGISTRY[category][key]
     img = func(size)
+    img = trim_transparent_bounds(img)
 
     out_dir = OUT_DIR / category
     out_dir.mkdir(parents=True, exist_ok=True)

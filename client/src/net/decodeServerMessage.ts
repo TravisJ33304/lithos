@@ -272,6 +272,15 @@ function normalizeRecipeDefinition(v: unknown): RecipeDefinition {
 }
 
 function normalizeInteractableSnapshot(v: unknown): InteractableSnapshot {
+	if (Array.isArray(v) && v.length >= 4) {
+		return {
+			target_entity_id: asNumber(v[0]),
+			kind: asString(v[1]) as InteractableSnapshot["kind"],
+			required_tool:
+				v[2] === null || v[2] === undefined ? null : asString(v[2]),
+			can_interact: Boolean(v[3]),
+		};
+	}
 	if (isRecord(v)) {
 		return {
 			target_entity_id: asNumber(v.target_entity_id),

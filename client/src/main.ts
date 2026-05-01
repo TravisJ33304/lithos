@@ -38,7 +38,7 @@ const config: Phaser.Types.Core.GameConfig = {
 		autoCenter: Phaser.Scale.CENTER_BOTH,
 	},
 	pixelArt: false,
-	roundPixels: true,
+	roundPixels: false,
 };
 
 const game = new Phaser.Game(config);
